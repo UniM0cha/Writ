@@ -22,7 +22,7 @@ enum WritColor {
     // MARK: UI Elements
     static let divider = Color(light: .black.opacity(0.08), dark: .white.opacity(0.08))
     static let searchBarBackground = Color(red: 118/255, green: 118/255, blue: 128/255).opacity(0.12)
-    static let chipBackground = Color(.hex(0xE5E5EA))
+    static let chipBackground = Color(light: .hex(0xE5E5EA), dark: .hex(0x3A3A3C))
     static let accentLight = Color(light: .hex(0x007AFF).opacity(0.12), dark: .hex(0x0A84FF).opacity(0.15))
 
     // MARK: Status

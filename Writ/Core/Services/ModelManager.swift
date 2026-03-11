@@ -100,10 +100,17 @@ final class ModelManager: ObservableObject {
 
     /// 모델 다운로드 및 로드 (선택)
     func loadModel(_ variant: WhisperModelVariant) async throws {
+        // 기존 모델 메모리 해제 (CoreML 모델은 수백MB~1GB 차지)
+        if activeModel != nil {
+            await engine.unloadModel()
+            activeModel = nil
+        }
+
         updateModelState(variant, state: .loading)
         do {
             try await engine.loadModel(variant) { [weak self] progress in
-                Task { @MainActor in
+                guard let self else { return }
+                Task { @MainActor [weak self] in
                     self?.updateModelState(variant, state: .downloading(progress: progress))
                 }
             }
@@ -150,12 +157,25 @@ final class ModelManager: ObservableObject {
         language: String?,
         progressCallback: (@Sendable (Float) -> Void)?
     ) async throws -> TranscriptionOutput {
+        print("[Writ] ModelManager.transcribe: audioURL = \(audioURL.path)")
+        print("[Writ] ModelManager.transcribe: activeModel = \(String(describing: activeModel))")
+        print("[Writ] ModelManager.transcribe: language = \(String(describing: language))")
+
+        guard activeModel != nil else {
+            print("[Writ] ModelManager.transcribe: ERROR - no active model")
+            throw WhisperKitEngineError.modelNotLoaded
+        }
+
         do {
-            return try await engine.transcribe(audioURL: audioURL, language: language, progressCallback: progressCallback)
+            let result = try await engine.transcribe(audioURL: audioURL, language: language, progressCallback: progressCallback)
+            print("[Writ] ModelManager.transcribe: success, text length = \(result.text.count)")
+            return result
         } catch {
+            print("[Writ] ModelManager.transcribe: engine.transcribe failed: \(error)")
             if let current = activeModel,
                (current == .largeV3 || current == .largeV3Turbo) {
                 let fallback = capability.defaultModel
+                print("[Writ] ModelManager.transcribe: falling back to \(fallback.rawValue)")
                 try await loadModel(fallback)
                 return try await engine.transcribe(audioURL: audioURL, language: language, progressCallback: progressCallback)
             }

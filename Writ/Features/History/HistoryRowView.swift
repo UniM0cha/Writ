@@ -45,9 +45,8 @@ struct HistoryRowView: View {
 
                 // 진행 바 (전사 진행 중)
                 if recording.transcription?.status == .inProgress {
-                    ProgressView(value: 0.5)
+                    ProgressView()
                         .tint(WritColor.warning)
-                        .frame(height: WritDimension.progressBarHeight)
                 }
             }
         }

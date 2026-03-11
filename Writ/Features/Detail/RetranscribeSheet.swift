@@ -38,7 +38,9 @@ struct RetranscribeSheet: View {
             }
             .background(WritColor.background)
             .navigationTitle("재전사")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("취소") { dismiss() }

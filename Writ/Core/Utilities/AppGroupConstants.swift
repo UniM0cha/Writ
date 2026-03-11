@@ -1,6 +1,6 @@
 import Foundation
 
-enum AppGroupConstants {
+nonisolated enum AppGroupConstants {
     static let groupIdentifier = "group.com.solstice.writ"
 
     /// 앱 컨테이너 URL (유료 계정 전환 시 App Group 컨테이너로 변경)

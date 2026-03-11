@@ -2,12 +2,32 @@ import ActivityKit
 import SwiftUI
 import WidgetKit
 
-// MARK: - Live Activity Attributes
+// WritActivityAttributes는 Writ/Core/Models/WritActivityAttributes.swift에서 공유
 
-struct WritActivityAttributes: ActivityAttributes {
-    public struct ContentState: Codable, Hashable {
-        var recordingDuration: TimeInterval
-        var isTranscribing: Bool
+// MARK: - Animated Waveform Views
+
+private struct AnimatedWaveformView: View {
+    let barCount: Int
+    let barWidth: CGFloat
+    let barSpacing: CGFloat
+    let barCornerRadius: CGFloat
+    let frameHeight: CGFloat
+    let barColor: Color
+    let heightProvider: (Int) -> CGFloat
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.5)) { timeline in
+            HStack(spacing: barSpacing) {
+                ForEach(0..<barCount, id: \.self) { index in
+                    let seed = timeline.date.timeIntervalSince1970
+                    let variation = sin(seed * 3 + Double(index) * 0.7) * 0.4 + 0.6
+                    RoundedRectangle(cornerRadius: barCornerRadius)
+                        .fill(barColor)
+                        .frame(width: barWidth, height: heightProvider(index) * variation)
+                }
+            }
+            .frame(height: frameHeight)
+        }
     }
 }
 
@@ -17,7 +37,7 @@ struct WritLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: WritActivityAttributes.self) { context in
             // 잠금 화면 Live Activity
-            lockScreenView(context: context)
+            LockScreenLiveActivityView(context: context)
 
         } dynamicIsland: { context in
             DynamicIsland {
@@ -27,7 +47,7 @@ struct WritLiveActivity: Widget {
                         Text("Writ")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.white.opacity(0.5))
-                        Text(formatTime(context.state.recordingDuration))
+                        Text(context.state.recordingStartDate, style: .timer)
                             .font(.system(size: 24, weight: .light))
                             .foregroundStyle(.white)
                             .monospacedDigit()
@@ -47,15 +67,16 @@ struct WritLiveActivity: Widget {
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    // 파형: 14바, 3px 너비, red
-                    HStack(spacing: 2) {
-                        ForEach(0..<14, id: \.self) { index in
-                            RoundedRectangle(cornerRadius: 1.5)
-                                .fill(Color(red: 1, green: 0.231, blue: 0.188))
-                                .frame(width: 3, height: waveformBarHeight(index: index))
-                        }
-                    }
-                    .frame(height: 40)
+                    // 파형: 14바, 3px 너비, red (TimelineView로 애니메이션)
+                    AnimatedWaveformView(
+                        barCount: 14,
+                        barWidth: 3,
+                        barSpacing: 2,
+                        barCornerRadius: 1.5,
+                        frameHeight: 40,
+                        barColor: Color(red: 1, green: 0.231, blue: 0.188),
+                        heightProvider: waveformBarHeight
+                    )
                 }
             } compactLeading: {
                 // Compact Leading: 8px 빨간 점 (펄스)
@@ -63,21 +84,22 @@ struct WritLiveActivity: Widget {
                     Circle()
                         .fill(Color(red: 1, green: 0.231, blue: 0.188))
                         .frame(width: 8, height: 8)
-                    Text(formatTime(context.state.recordingDuration))
+                    Text(context.state.recordingStartDate, style: .timer)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white)
                         .monospacedDigit()
                 }
             } compactTrailing: {
-                // Compact Trailing: 미니 파형 7바
-                HStack(spacing: 1.5) {
-                    ForEach(0..<7, id: \.self) { index in
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(Color(red: 1, green: 0.231, blue: 0.188))
-                            .frame(width: 2, height: miniWaveformBarHeight(index: index))
-                    }
-                }
-                .frame(height: 16)
+                // Compact Trailing: 미니 파형 7바 (TimelineView로 애니메이션)
+                AnimatedWaveformView(
+                    barCount: 7,
+                    barWidth: 2,
+                    barSpacing: 1.5,
+                    barCornerRadius: 1,
+                    frameHeight: 16,
+                    barColor: Color(red: 1, green: 0.231, blue: 0.188),
+                    heightProvider: miniWaveformBarHeight
+                )
             } minimal: {
                 ZStack {
                     Circle()
@@ -87,10 +109,14 @@ struct WritLiveActivity: Widget {
             }
         }
     }
+}
 
-    // MARK: - Lock Screen View
+// MARK: - Lock Screen View
 
-    private func lockScreenView(context: ActivityViewContext<WritActivityAttributes>) -> some View {
+private struct LockScreenLiveActivityView: View {
+    let context: ActivityViewContext<WritActivityAttributes>
+
+    var body: some View {
         HStack(spacing: 12) {
             // 앱 아이콘: 36x36, gradient, 8px radius
             ZStack {
@@ -115,7 +141,7 @@ struct WritLiveActivity: Widget {
                 Text(context.state.isTranscribing ? "전사 중..." : "녹음 중")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.white)
-                Text(formatTime(context.state.recordingDuration))
+                Text(context.state.recordingStartDate, style: .timer)
                     .font(.system(size: 13))
                     .foregroundStyle(.white.opacity(0.6))
                     .monospacedDigit()
@@ -123,15 +149,16 @@ struct WritLiveActivity: Widget {
 
             Spacer()
 
-            // 미니 파형
-            HStack(spacing: 1.5) {
-                ForEach(0..<7, id: \.self) { index in
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(.white.opacity(0.6))
-                        .frame(width: 2, height: miniWaveformBarHeight(index: index))
-                }
-            }
-            .frame(height: 16)
+            // 미니 파형 (TimelineView로 애니메이션)
+            AnimatedWaveformView(
+                barCount: 7,
+                barWidth: 2,
+                barSpacing: 1.5,
+                barCornerRadius: 1,
+                frameHeight: 16,
+                barColor: .white.opacity(0.6),
+                heightProvider: miniWaveformBarHeight
+            )
 
             // 정지 버튼: 32x32, red circle, 10x10 흰색 사각형
             if !context.state.isTranscribing {
@@ -154,26 +181,20 @@ struct WritLiveActivity: Widget {
         .padding(.vertical, 14)
         .activityBackgroundTint(.black.opacity(0.8))
     }
+}
 
-    // MARK: - Helpers
+// MARK: - Helpers
 
-    private func formatTime(_ time: TimeInterval) -> String {
-        let minutes = Int(time) / 60
-        let seconds = Int(time) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
-    }
+private func waveformBarHeight(index: Int) -> CGFloat {
+    // 시뮬레이션된 파형 높이 (4~40 범위)
+    let heights: [CGFloat] = [12, 24, 16, 32, 20, 36, 14, 28, 18, 34, 22, 10, 30, 16]
+    return heights[index % heights.count]
+}
 
-    private func waveformBarHeight(index: Int) -> CGFloat {
-        // 시뮬레이션된 파형 높이 (4~40 범위)
-        let heights: [CGFloat] = [12, 24, 16, 32, 20, 36, 14, 28, 18, 34, 22, 10, 30, 16]
-        return heights[index % heights.count]
-    }
-
-    private func miniWaveformBarHeight(index: Int) -> CGFloat {
-        // 미니 파형 높이 (3~14 범위)
-        let heights: [CGFloat] = [6, 10, 8, 14, 12, 7, 9]
-        return heights[index % heights.count]
-    }
+private func miniWaveformBarHeight(index: Int) -> CGFloat {
+    // 미니 파형 높이 (3~14 범위)
+    let heights: [CGFloat] = [6, 10, 8, 14, 12, 7, 9]
+    return heights[index % heights.count]
 }
 
 // MARK: - 홈 화면 위젯

@@ -12,7 +12,7 @@ struct KeyboardView: View {
     @State private var resultText: String?
     @State private var waveformHeights: [CGFloat] = Array(repeating: 0.3, count: 20)
 
-    enum KeyboardState {
+    nonisolated enum KeyboardState {
         case idle
         case recording
         case transcribing

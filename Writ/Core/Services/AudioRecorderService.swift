@@ -18,8 +18,23 @@ final class AudioRecorderService: NSObject, ObservableObject {
     }
 
     /// 녹음 시작. 녹음 파일명을 반환.
-    func startRecording() throws -> String {
+    func startRecording() async throws -> String {
         #if os(iOS)
+        // 마이크 권한 확인 및 요청
+        let permission = AVAudioApplication.shared.recordPermission
+        if permission == .undetermined {
+            let granted = await withCheckedContinuation { continuation in
+                AVAudioApplication.requestRecordPermission { granted in
+                    continuation.resume(returning: granted)
+                }
+            }
+            guard granted else {
+                throw AudioRecorderError.microphonePermissionDenied
+            }
+        } else if permission == .denied {
+            throw AudioRecorderError.microphonePermissionDenied
+        }
+
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
         try session.setActive(true)
@@ -30,9 +45,10 @@ final class AudioRecorderService: NSObject, ObservableObject {
 
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 16000,
+            AVSampleRateKey: 48000,
             AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+            AVEncoderAudioQualityKey: AVAudioQuality.max.rawValue,
+            AVEncoderBitRateKey: 128000
         ]
 
         let recorder = try AVAudioRecorder(url: url, settings: settings)
@@ -45,7 +61,8 @@ final class AudioRecorderService: NSObject, ObservableObject {
         isRecording = true
 
         timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            guard let self else { return }
+            Task { @MainActor [weak self] in
                 self?.updateMeters()
             }
         }
@@ -55,9 +72,21 @@ final class AudioRecorderService: NSObject, ObservableObject {
 
     /// 녹음 중지. (파일명, 녹음 시간) 반환.
     func stopRecording() -> (String, TimeInterval)? {
-        guard let recorder = audioRecorder, let fileName = currentFileName else { return nil }
+        guard let recorder = audioRecorder, let fileName = currentFileName else {
+            print("[Writ] AudioRecorderService.stopRecording: no active recorder or fileName")
+            return nil
+        }
         let duration = recorder.currentTime
         recorder.stop()
+
+        let fileURL = AppGroupConstants.recordingsDirectory.appendingPathComponent(fileName)
+        print("[Writ] AudioRecorderService.stopRecording: fileName = \(fileName)")
+        print("[Writ] AudioRecorderService.stopRecording: duration = \(duration)")
+        print("[Writ] AudioRecorderService.stopRecording: file exists = \(FileManager.default.fileExists(atPath: fileURL.path))")
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+           let size = attrs[.size] as? Int {
+            print("[Writ] AudioRecorderService.stopRecording: file size = \(size) bytes")
+        }
 
         timer?.invalidate()
         timer = nil
@@ -81,6 +110,16 @@ final class AudioRecorderService: NSObject, ObservableObject {
             at: AppGroupConstants.recordingsDirectory,
             withIntermediateDirectories: true
         )
+    }
+}
+
+enum AudioRecorderError: LocalizedError {
+    case microphonePermissionDenied
+
+    var errorDescription: String? {
+        switch self {
+        case .microphonePermissionDenied: "마이크 접근 권한이 필요합니다. 설정에서 허용해주세요."
+        }
     }
 }
 

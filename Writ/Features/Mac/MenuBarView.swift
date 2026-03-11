@@ -138,7 +138,9 @@ struct MenuBarView: View {
         } else {
             errorMessage = nil
             lastResult = nil
-            currentFileName = try? appState.recorderService.startRecording()
+            Task {
+                currentFileName = try? await appState.recorderService.startRecording()
+            }
         }
     }
 

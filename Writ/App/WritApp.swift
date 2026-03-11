@@ -33,13 +33,24 @@ struct WritApp: App {
 
     private func handleDeepLink(_ url: URL) {
         guard url.scheme == "writ" else { return }
-        if url.host == "start-recording" {
+        switch url.host {
+        case "start-recording":
             Task { @MainActor in
                 if !appState.recorderService.isRecording {
-                    _ = try? appState.recorderService.startRecording()
+                    _ = try? await appState.recorderService.startRecording()
                     appState.selectedTab = .record
                 }
             }
+        case "stop-recording":
+            Task { @MainActor in
+                if appState.recorderService.isRecording {
+                    appState.selectedTab = .record
+                    // RecordingView의 stopAndTranscribe가 처리하도록 플래그 설정
+                    appState.pendingStopRecording = true
+                }
+            }
+        default:
+            break
         }
     }
 }

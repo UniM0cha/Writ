@@ -3,11 +3,14 @@ import AVFoundation
 
 struct TranscriptionDetailView: View {
     let recording: Recording
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @State private var isPlaying = false
     @State private var currentPlaybackTime: TimeInterval = 0
     @State private var showExportSheet = false
     @State private var showRetranscribeSheet = false
     @State private var copiedFeedback = false
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         ScrollView {
@@ -52,7 +55,9 @@ struct TranscriptionDetailView: View {
         }
         .background(WritColor.background)
         .navigationTitle(recording.createdAt.formatted(date: .abbreviated, time: .shortened))
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
@@ -62,7 +67,9 @@ struct TranscriptionDetailView: View {
                     Button(action: copyText) {
                         Label("전체 복사", systemImage: "doc.on.doc")
                     }
-                    Button(role: .destructive) {} label: {
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
                         Label("삭제", systemImage: "trash")
                     }
                 } label: {
@@ -76,6 +83,26 @@ struct TranscriptionDetailView: View {
         .sheet(isPresented: $showRetranscribeSheet) {
             RetranscribeSheet(recording: recording)
         }
+        .confirmationDialog(
+            "이 녹음을 삭제하시겠습니까?",
+            isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("삭제", role: .destructive) {
+                deleteRecording()
+            }
+        } message: {
+            Text("오디오 파일과 전사문이 모두 삭제됩니다. 이 작업은 되돌릴 수 없습니다.")
+        }
+    }
+
+    private func deleteRecording() {
+        // 오디오 파일 삭제
+        try? FileManager.default.removeItem(at: recording.audioURL)
+        // SwiftData에서 Recording 삭제 (cascade로 Transcription, Segment도 삭제)
+        modelContext.delete(recording)
+        try? modelContext.save()
+        dismiss()
     }
 
     // MARK: - Action Bar

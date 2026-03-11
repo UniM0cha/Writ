@@ -41,7 +41,9 @@ struct MacMainView: View {
     }
 
     private func startRecording() {
-        _ = try? appState.recorderService.startRecording()
+        Task {
+            _ = try? await appState.recorderService.startRecording()
+        }
     }
 }
 #endif

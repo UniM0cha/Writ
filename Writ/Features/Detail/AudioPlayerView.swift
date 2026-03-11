@@ -9,6 +9,7 @@ struct AudioPlayerView: View {
 
     @State private var player: AVAudioPlayer?
     @State private var playbackSpeed: Float = 1.0
+    @State private var waveformData: [Float] = []
 
     private let speeds: [Float] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
 
@@ -130,15 +131,22 @@ struct AudioPlayerView: View {
             )
         }
         .frame(height: WritDimension.waveformSeekHeight)
+        .task {
+            // 대략적 barCount 추정 (실제 GeometryReader 너비와 다를 수 있지만 충분)
+            let estimatedBarCount = 120
+            waveformData = await AudioWaveformExtractor.extractWaveform(
+                from: audioURL,
+                barCount: estimatedBarCount
+            )
+        }
     }
 
     private func waveformBarHeight(index: Int, total: Int) -> CGFloat {
-        // 파형 모양 시뮬레이션 (실제 오디오 데이터 없이)
-        let normalized = Double(index) / Double(max(total, 1))
-        let height = sin(normalized * .pi * 4) * 0.3 + 0.5
-            + sin(normalized * .pi * 7) * 0.15
-            + sin(normalized * .pi * 13) * 0.05
-        return CGFloat(max(0.15, min(height, 1.0))) * WritDimension.waveformSeekHeight
+        guard !waveformData.isEmpty else {
+            return CGFloat(0.15) * WritDimension.waveformSeekHeight
+        }
+        let dataIndex = min(index, waveformData.count - 1)
+        return CGFloat(max(0.08, waveformData[dataIndex])) * WritDimension.waveformSeekHeight
     }
 
     // MARK: - Speed

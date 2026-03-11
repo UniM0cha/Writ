@@ -12,11 +12,11 @@ struct WaveformView: View {
                 ForEach(0..<bars.count, id: \.self) { index in
                     RoundedRectangle(cornerRadius: WritDimension.waveformBarRadius)
                         .fill(WritColor.accent)
-                        .frame(width: WritDimension.waveformBarWidth, height: max(4, bars[index] * 120))
+                        .frame(width: WritDimension.waveformBarWidth, height: max(2, bars[index] * 120))
                         .opacity(isRecording ? 1.0 : 0.3)
                         .animation(
                             isRecording
-                                ? .easeInOut(duration: 0.6 + Double(index % 5) * 0.04)
+                                ? .easeInOut(duration: 0.12 + Double(index % 5) * 0.02)
                                 : .easeOut(duration: 0.3),
                             value: bars[index]
                         )
@@ -38,7 +38,10 @@ struct WaveformView: View {
     private func updateBars() {
         guard isRecording else { return }
         bars.removeFirst()
-        let normalized = CGFloat(max(0, (power + 50) / 50))
-        bars.append(normalized)
+        let normalized = CGFloat(max(0, min(1, (power + 60) / 60)))
+        let curved = pow(normalized, 0.7)
+        let variation = CGFloat.random(in: -0.1...0.1)
+        let final = max(0, min(1, curved + variation))
+        bars.append(final)
     }
 }

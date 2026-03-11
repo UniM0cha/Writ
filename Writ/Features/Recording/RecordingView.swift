@@ -1,5 +1,8 @@
 import SwiftUI
 import SwiftData
+#if os(iOS)
+import ActivityKit
+#endif
 
 struct RecordingView: View {
     @EnvironmentObject var appState: AppState
@@ -8,9 +11,9 @@ struct RecordingView: View {
     @AppStorage("autoCopyEnabled") private var autoCopyEnabled = false
 
     @State private var currentFileName: String?
-    @State private var transcriptionResult: String?
-    @State private var isTranscribing = false
-    @State private var errorMessage: String?
+    #if os(iOS)
+    @State private var currentActivity: Activity<WritActivityAttributes>?
+    #endif
 
     private var isRecording: Bool { appState.recorderService.isRecording }
 
@@ -44,22 +47,19 @@ struct RecordingView: View {
 
                     Spacer()
 
-                    // 파형
-                    WaveformView(
-                        power: appState.recorderService.averagePower,
-                        isRecording: isRecording
-                    )
-                    .frame(height: 120)
-                    .padding(.horizontal, WritSpacing.xxl)
+                    // 파형 + 타이머 그룹 (수직 중앙)
+                    VStack(spacing: WritSpacing.md) {
+                        WaveformView(
+                            power: appState.recorderService.averagePower,
+                            isRecording: isRecording
+                        )
+                        .frame(height: 120)
+                        .padding(.horizontal, WritSpacing.xxl)
 
-                    // 타이머
-                    timerDisplay
-                        .padding(.top, WritSpacing.lg)
+                        timerDisplay
+                    }
 
                     Spacer()
-
-                    // 전사 결과 / 진행중 / 에러
-                    resultSection
 
                     // 모델 표시
                     modelIndicator
@@ -71,8 +71,16 @@ struct RecordingView: View {
                 }
             }
             .navigationTitle("녹음")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.large)
             .toolbarColorScheme(isRecording ? .dark : nil, for: .navigationBar)
+            #endif
+            .onChange(of: appState.pendingStopRecording) { _, pending in
+                if pending && isRecording {
+                    stopAndTranscribe()
+                    appState.pendingStopRecording = false
+                }
+            }
         }
     }
 
@@ -137,43 +145,6 @@ struct RecordingView: View {
         .animation(WritAnimation.backgroundTransition, value: isRecording)
     }
 
-    // MARK: - Result Section
-
-    @ViewBuilder
-    private var resultSection: some View {
-        if let result = transcriptionResult {
-            ScrollView {
-                Text(result)
-                    .font(.body)
-                    .foregroundStyle(isRecording ? .white : WritColor.primaryText)
-                    .padding()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: 200)
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: WritRadius.card))
-            .padding(.horizontal, WritSpacing.md)
-        }
-
-        if isTranscribing {
-            HStack(spacing: WritSpacing.xs) {
-                ProgressView()
-                    .tint(isRecording ? .white : WritColor.accent)
-                Text("전사 중...")
-                    .font(WritFont.caption)
-                    .foregroundStyle(isRecording ? .white : WritColor.secondaryText)
-            }
-            .padding()
-        }
-
-        if let error = errorMessage {
-            Text(error)
-                .font(WritFont.caption)
-                .foregroundStyle(WritColor.recordingRed)
-                .padding()
-        }
-    }
-
     // MARK: - Model Indicator
 
     private var modelIndicator: some View {
@@ -233,8 +204,7 @@ struct RecordingView: View {
             }
             .animation(WritAnimation.buttonMorph, value: isRecording)
         }
-        .disabled(!isModelReady && !isRecording)
-        .opacity(!isModelReady && !isRecording ? 0.4 : 1.0)
+        .opacity(1.0)
     }
 
     // MARK: - Model Status Text
@@ -267,66 +237,129 @@ struct RecordingView: View {
     }
 
     private func startRecording() {
-        transcriptionResult = nil
-        errorMessage = nil
-        do {
-            currentFileName = try appState.recorderService.startRecording()
-        } catch {
-            errorMessage = "녹음을 시작할 수 없습니다: \(error.localizedDescription)"
+        Task {
+            do {
+                currentFileName = try await appState.recorderService.startRecording()
+                #if os(iOS)
+                startLiveActivity()
+                #endif
+            } catch {
+                // 녹음 시작 실패 시 무시 (UI에서 별도 처리 없음)
+            }
+        }
+
+        // 모델이 아직 로드되지 않았으면 별도 Task로 백그라운드 로드
+        if appState.modelManager.activeModel == nil {
+            Task {
+                await appState.modelManager.loadDefaultModelIfNeeded()
+            }
         }
     }
 
     private func stopAndTranscribe() {
-        guard let (fileName, duration) = appState.recorderService.stopRecording() else { return }
-        let audioURL = AppGroupConstants.recordingsDirectory.appendingPathComponent(fileName)
+        guard let (fileName, duration) = appState.recorderService.stopRecording() else {
+            print("[Writ] stopAndTranscribe: stopRecording returned nil")
+            return
+        }
         let language: String? = selectedLanguage == "auto" ? nil : selectedLanguage
 
-        isTranscribing = true
+        print("[Writ] stopAndTranscribe: fileName = \(fileName), duration = \(duration)")
+
+        // 즉시 Recording 객체 생성 및 pending 상태로 저장
+        let recording = Recording(
+            duration: duration,
+            audioFileName: fileName,
+            languageCode: language,
+            sourceDevice: .iPhone
+        )
+        let transcription = Transcription(
+            text: "",
+            modelUsed: appState.modelManager.activeModel?.displayName ?? "unknown",
+            status: .pending
+        )
+        recording.transcription = transcription
+        modelContext.insert(recording)
+
+        do {
+            try modelContext.save()
+            print("[Writ] stopAndTranscribe: recording saved with persistentModelID = \(recording.persistentModelID)")
+        } catch {
+            print("[Writ] stopAndTranscribe: ERROR saving recording: \(error)")
+        }
+
+        let recordingID = recording.persistentModelID
+        let autoCopy = autoCopyEnabled
+
+        // 백그라운드에서 전사 시작 (RecordingView는 즉시 초기 상태로 리셋)
+        #if os(iOS)
+        updateLiveActivity(isTranscribing: true)
+        #endif
         Task {
-            do {
-                let output = try await appState.modelManager.transcribe(
-                    audioURL: audioURL,
-                    language: language,
-                    progressCallback: nil
-                )
-                transcriptionResult = output.text
+            await appState.transcribeInBackground(
+                recordingID: recordingID,
+                audioFileName: fileName,
+                language: language,
+                autoCopy: autoCopy
+            )
+            #if os(iOS)
+            endLiveActivity()
+            #endif
+        }
 
-                let recording = Recording(
-                    duration: duration,
-                    audioFileName: fileName,
-                    languageCode: language,
-                    sourceDevice: .iPhone
-                )
+        // 녹음 뷰 초기화 (다음 녹음 준비)
+        currentFileName = nil
+    }
 
-                let segments = output.segments.enumerated().map { index, seg in
-                    WritSegment(
-                        text: seg.text,
-                        startTime: seg.startTime,
-                        endTime: seg.endTime,
-                        orderIndex: index
-                    )
-                }
+    // MARK: - Live Activity
 
-                let transcription = Transcription(
-                    text: output.text,
-                    modelUsed: appState.modelManager.activeModel?.displayName ?? "unknown",
-                    status: .completed,
-                    segments: segments
-                )
+    #if os(iOS)
+    private func startLiveActivity() {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
 
-                recording.transcription = transcription
-                modelContext.insert(recording)
-                try modelContext.save()
+        let attributes = WritActivityAttributes()
+        let state = WritActivityAttributes.ContentState(
+            recordingDuration: 0,
+            recordingStartDate: Date(),
+            isTranscribing: false
+        )
 
-                if autoCopyEnabled {
-                    ClipboardService.copy(output.text)
-                }
-            } catch {
-                errorMessage = "전사 실패: \(error.localizedDescription)"
-            }
-            isTranscribing = false
+        do {
+            let activity = try Activity.request(
+                attributes: attributes,
+                content: .init(state: state, staleDate: nil)
+            )
+            currentActivity = activity
+        } catch {
+            // Live Activity 시작 실패 — 무시 (핵심 기능 아님)
         }
     }
+
+    private func updateLiveActivity(isTranscribing: Bool) {
+        Task {
+            let state = WritActivityAttributes.ContentState(
+                recordingDuration: appState.recorderService.currentTime,
+                recordingStartDate: Date(),
+                isTranscribing: isTranscribing
+            )
+            await currentActivity?.update(.init(state: state, staleDate: nil))
+        }
+    }
+
+    private func endLiveActivity() {
+        Task {
+            let finalState = WritActivityAttributes.ContentState(
+                recordingDuration: 0,
+                recordingStartDate: Date(),
+                isTranscribing: false
+            )
+            await currentActivity?.end(
+                .init(state: finalState, staleDate: nil),
+                dismissalPolicy: .immediate
+            )
+            currentActivity = nil
+        }
+    }
+    #endif
 
     private func formatTime(_ time: TimeInterval) -> String {
         let minutes = Int(time) / 60

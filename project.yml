@@ -34,8 +34,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.solstice.Writ
-        SDKROOT: iphoneos
-        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        SDKROOT: auto
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "음성을 텍스트로 변환하기 위해 마이크 접근이 필요합니다."
         INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]: YES
         INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]: YES
@@ -45,6 +47,7 @@ targets:
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]: YES
         INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]: UIStatusBarStyleDefault
         INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]: UIStatusBarStyleDefault
+        INFOPLIST_KEY_NSMicrophoneUsageDescription[sdk=macosx*]: "음성을 텍스트로 변환하기 위해 마이크 접근이 필요합니다."
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -54,11 +57,14 @@ targets:
         ENABLE_APP_SANDBOX: NO
         ENABLE_HARDENED_RUNTIME: NO
         ENABLE_PREVIEWS: YES
-        REGISTER_APP_GROUPS: NO
+        REGISTER_APP_GROUPS: YES
+        INFOPLIST_KEY_NSSupportsLiveActivities: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         STRING_CATALOG_GENERATE_SYMBOLS: YES
-        LD_RUNPATH_SEARCH_PATHS: "@executable_path/Frameworks"
+        LD_RUNPATH_SEARCH_PATHS[sdk=iphoneos*]: "@executable_path/Frameworks"
+        LD_RUNPATH_SEARCH_PATHS[sdk=iphonesimulator*]: "@executable_path/Frameworks"
+        LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]: "@executable_path/../Frameworks"
     dependencies:
       - package: WhisperKit
         product: WhisperKit
@@ -67,15 +73,20 @@ targets:
       - target: WritWidgetExtension
         embed: true
         codeSign: true
+        platforms: [iOS]
         copy:
           destination: plugins
       - target: WritKeyboard
         embed: true
         codeSign: true
+        platforms: [iOS]
         copy:
           destination: plugins
     entitlements:
       path: Writ/Writ.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.solstice.writ
 
   # ─── Widget Extension (Live Activity + Home Widget) ───
   WritWidgetExtension:
@@ -84,23 +95,20 @@ targets:
     sources:
       - path: WritWidgetExtension
         createIntermediateGroups: true
+      - path: Writ/Core/Models/WritActivityAttributes.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.solstice.Writ.WritWidgetExtension
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: 1
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: WritWidgetExtension/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: WritWidget
-        INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.widgetkit-extension
         TARGETED_DEVICE_FAMILY: "1,2"
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
         SKIP_INSTALL: YES
         SWIFT_EMIT_LOC_STRINGS: YES
-    entitlements:
-      path: WritWidgetExtension/WritWidgetExtension.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - group.com.solstice.writ
+        CODE_SIGN_ENTITLEMENTS: WritWidgetExtension/WritWidgetExtension.entitlements
 
   # ─── Keyboard Extension ───
   WritKeyboard:
@@ -124,6 +132,9 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: YES
     entitlements:
       path: WritKeyboard/WritKeyboard.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.solstice.writ
 
   # ─── Watch App ───
   WritWatch:

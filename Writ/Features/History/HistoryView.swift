@@ -74,7 +74,9 @@ struct HistoryView: View {
                 }
             }
         }
+        #if os(iOS)
         .listStyle(.insetGrouped)
+        #endif
     }
 
     private var groupedByDate: [(key: Date, value: [Recording])] {

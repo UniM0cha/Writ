@@ -210,13 +210,18 @@ struct ModelRowView: View {
                 .background(WritColor.accentLight, in: Capsule())
 
         case .downloading(let progress):
-            HStack(spacing: WritSpacing.xxs) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("\(Int(progress * 100))%")
-                    .font(WritFont.caption)
+            ZStack {
+                Circle()
+                    .stroke(WritColor.secondaryText.opacity(0.2), lineWidth: 3)
+                Circle()
+                    .trim(from: 0, to: CGFloat(progress))
+                    .stroke(WritColor.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Text("\(Int(progress * 100))")
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(WritColor.secondaryText)
             }
+            .frame(width: 36, height: 36)
 
         case .downloaded:
             Image(systemName: "checkmark.circle")

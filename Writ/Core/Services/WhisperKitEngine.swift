@@ -17,17 +17,22 @@ final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
         _ model: WhisperModelVariant,
         progressCallback: (@Sendable (Float) -> Void)?
     ) async throws {
-        let config = WhisperKitConfig(model: model.rawValue)
-        let kit = try await WhisperKit(config)
+        // 1. 다운로드 (이미 로컬에 있으면 스킵됨, 없으면 진행률 콜백 호출)
+        let modelURL = try await WhisperKit.download(
+            variant: model.rawValue,
+            from: "argmaxinc/whisperkit-coreml",
+            progressCallback: { progress in
+                progressCallback?(Float(progress.fractionCompleted))
+            }
+        )
 
-        // WhisperKitConfig does not expose a download progress callback.
-        // WhisperKit exposes a `progress` (Foundation.Progress) property that
-        // can be observed via KVO for download progress, but the download
-        // happens inside the `WhisperKit(config)` initializer above, so by
-        // this point it has already completed. To report real-time download
-        // progress, a future refactor could call `WhisperKit.download()`
-        // separately (which accepts a `progressCallback`) and then pass the
-        // resulting `modelFolder` into `WhisperKitConfig`.
+        // 2. 로컬 모델에서 로드만 수행 (다운로드 스킵)
+        let config = WhisperKitConfig(
+            modelFolder: modelURL.path,
+            load: true,
+            download: false
+        )
+        let kit = try await WhisperKit(config)
 
         lock.withLock {
             self.whisperKit = kit

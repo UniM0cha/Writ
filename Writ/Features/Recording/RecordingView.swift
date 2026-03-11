@@ -13,6 +13,7 @@ struct RecordingView: View {
     @State private var currentFileName: String?
     #if os(iOS)
     @State private var currentActivity: Activity<WritActivityAttributes>?
+    @State private var liveActivityTimer: Timer?
     #endif
 
     private var isRecording: Bool { appState.recorderService.isRecording }
@@ -290,10 +291,12 @@ struct RecordingView: View {
         let recordingID = recording.persistentModelID
         let autoCopy = autoCopyEnabled
 
-        // 백그라운드에서 전사 시작 (RecordingView는 즉시 초기 상태로 리셋)
+        // 녹음 중단 → 즉시 Live Activity 종료
         #if os(iOS)
-        updateLiveActivity(isTranscribing: true)
+        endLiveActivity()
         #endif
+
+        // 백그라운드에서 전사 시작 (RecordingView는 즉시 초기 상태로 리셋)
         Task {
             await appState.transcribeInBackground(
                 recordingID: recordingID,
@@ -301,9 +304,6 @@ struct RecordingView: View {
                 language: language,
                 autoCopy: autoCopy
             )
-            #if os(iOS)
-            endLiveActivity()
-            #endif
         }
 
         // 녹음 뷰 초기화 (다음 녹음 준비)
@@ -317,10 +317,12 @@ struct RecordingView: View {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
 
         let attributes = WritActivityAttributes()
+        let startDate = Date()
         let state = WritActivityAttributes.ContentState(
             recordingDuration: 0,
-            recordingStartDate: Date(),
-            isTranscribing: false
+            recordingStartDate: startDate,
+            isTranscribing: false,
+            averagePower: 0
         )
 
         do {
@@ -329,35 +331,49 @@ struct RecordingView: View {
                 content: .init(state: state, staleDate: nil)
             )
             currentActivity = activity
+
+            // 0.3초마다 averagePower push
+            liveActivityTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in
+                Task { @MainActor in
+                    self.pushLiveActivityPower(startDate: startDate)
+                }
+            }
         } catch {
             // Live Activity 시작 실패 — 무시 (핵심 기능 아님)
         }
     }
 
-    private func updateLiveActivity(isTranscribing: Bool) {
+    private func pushLiveActivityPower(startDate: Date) {
+        guard let activity = currentActivity else { return }
+        let state = WritActivityAttributes.ContentState(
+            recordingDuration: appState.recorderService.currentTime,
+            recordingStartDate: startDate,
+            isTranscribing: false,
+            averagePower: appState.recorderService.averagePower
+        )
         Task {
-            let state = WritActivityAttributes.ContentState(
-                recordingDuration: appState.recorderService.currentTime,
-                recordingStartDate: Date(),
-                isTranscribing: isTranscribing
-            )
-            await currentActivity?.update(.init(state: state, staleDate: nil))
+            await activity.update(.init(state: state, staleDate: nil))
         }
     }
 
     private func endLiveActivity() {
+        liveActivityTimer?.invalidate()
+        liveActivityTimer = nil
+
+        guard let activity = currentActivity else { return }
         Task {
             let finalState = WritActivityAttributes.ContentState(
                 recordingDuration: 0,
                 recordingStartDate: Date(),
-                isTranscribing: false
+                isTranscribing: false,
+                averagePower: 0
             )
-            await currentActivity?.end(
+            await activity.end(
                 .init(state: finalState, staleDate: nil),
                 dismissalPolicy: .immediate
             )
-            currentActivity = nil
         }
+        currentActivity = nil
     }
     #endif
 

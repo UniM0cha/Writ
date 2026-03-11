@@ -13,7 +13,7 @@ struct WritApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Window("Writ", id: "main") {
+        WindowGroup("Writ") {
             MacMainView()
                 .environmentObject(appState)
                 .modelContainer(appState.modelContainer)

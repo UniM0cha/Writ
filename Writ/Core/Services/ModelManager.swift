@@ -114,6 +114,12 @@ final class ModelManager: ObservableObject {
                     self?.updateModelState(variant, state: .downloading(progress: progress))
                 }
             }
+            // 기존 loaded 모델을 downloaded로 변경
+            for i in models.indices {
+                if case .loaded = models[i].state {
+                    models[i].state = .downloaded
+                }
+            }
             updateModelState(variant, state: .loaded)
             activeModel = variant
             UserDefaults.standard.set(variant.rawValue, forKey: "selectedModelVariant")

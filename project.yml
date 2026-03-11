@@ -136,6 +136,21 @@ targets:
         com.apple.security.application-groups:
           - group.com.solstice.writ
 
+  # ─── Unit Tests ───
+  WritTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: WritTests
+        createIntermediateGroups: true
+    dependencies:
+      - target: Writ
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.solstice.Writ.WritTests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+
   # ─── Watch App ───
   WritWatch:
     type: application

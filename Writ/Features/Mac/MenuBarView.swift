@@ -107,7 +107,7 @@ struct MenuBarView: View {
 
             Button("전체 기록 보기") {
                 NSApp.activate(ignoringOtherApps: true)
-                if let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" }) {
+                if let window = NSApp.windows.first(where: { $0.title == "Writ" }) {
                     window.makeKeyAndOrderFront(nil)
                 }
             }
@@ -115,7 +115,7 @@ struct MenuBarView: View {
 
             Button("설정...") {
                 NSApp.activate(ignoringOtherApps: true)
-                if let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" }) {
+                if let window = NSApp.windows.first(where: { $0.title == "Writ" }) {
                     window.makeKeyAndOrderFront(nil)
                 }
             }

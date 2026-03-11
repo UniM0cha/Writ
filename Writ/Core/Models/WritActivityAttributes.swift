@@ -7,6 +7,7 @@ struct WritActivityAttributes: ActivityAttributes {
         var recordingDuration: Double
         var recordingStartDate: Date
         var isTranscribing: Bool
+        var averagePower: Float
     }
 }
 
@@ -16,6 +17,7 @@ extension WritActivityAttributes.ContentState: Codable {
         self.recordingDuration = try container.decode(Double.self, forKey: .recordingDuration)
         self.recordingStartDate = try container.decode(Date.self, forKey: .recordingStartDate)
         self.isTranscribing = try container.decode(Bool.self, forKey: .isTranscribing)
+        self.averagePower = try container.decode(Float.self, forKey: .averagePower)
     }
 
     nonisolated func encode(to encoder: any Encoder) throws {
@@ -23,10 +25,11 @@ extension WritActivityAttributes.ContentState: Codable {
         try container.encode(recordingDuration, forKey: .recordingDuration)
         try container.encode(recordingStartDate, forKey: .recordingStartDate)
         try container.encode(isTranscribing, forKey: .isTranscribing)
+        try container.encode(averagePower, forKey: .averagePower)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case recordingDuration, recordingStartDate, isTranscribing
+        case recordingDuration, recordingStartDate, isTranscribing, averagePower
     }
 }
 
@@ -35,10 +38,11 @@ extension WritActivityAttributes.ContentState: Hashable {
         hasher.combine(recordingDuration)
         hasher.combine(recordingStartDate)
         hasher.combine(isTranscribing)
+        hasher.combine(averagePower)
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.recordingDuration == rhs.recordingDuration && lhs.recordingStartDate == rhs.recordingStartDate && lhs.isTranscribing == rhs.isTranscribing
+        lhs.recordingDuration == rhs.recordingDuration && lhs.recordingStartDate == rhs.recordingStartDate && lhs.isTranscribing == rhs.isTranscribing && lhs.averagePower == rhs.averagePower
     }
 }
 #endif

@@ -1,5 +1,8 @@
 import AVFoundation
 import Foundation
+import os
+
+private let logger = Logger(subsystem: AppGroupConstants.logSubsystem, category: "Recorder")
 
 /// 오디오 녹음 서비스. App Group 컨테이너에 녹음 파일을 저장한다.
 @MainActor
@@ -73,19 +76,17 @@ final class AudioRecorderService: NSObject, ObservableObject {
     /// 녹음 중지. (파일명, 녹음 시간) 반환.
     func stopRecording() -> (String, TimeInterval)? {
         guard let recorder = audioRecorder, let fileName = currentFileName else {
-            print("[Writ] AudioRecorderService.stopRecording: no active recorder or fileName")
+            logger.debug("stopRecording: no active recorder or fileName")
             return nil
         }
         let duration = recorder.currentTime
         recorder.stop()
 
         let fileURL = AppGroupConstants.recordingsDirectory.appendingPathComponent(fileName)
-        print("[Writ] AudioRecorderService.stopRecording: fileName = \(fileName)")
-        print("[Writ] AudioRecorderService.stopRecording: duration = \(duration)")
-        print("[Writ] AudioRecorderService.stopRecording: file exists = \(FileManager.default.fileExists(atPath: fileURL.path))")
+        logger.debug("stopRecording: fileName = \(fileName), duration = \(duration)")
         if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
            let size = attrs[.size] as? Int {
-            print("[Writ] AudioRecorderService.stopRecording: file size = \(size) bytes")
+            logger.debug("stopRecording: file size = \(size) bytes")
         }
 
         timer?.invalidate()
@@ -102,7 +103,9 @@ final class AudioRecorderService: NSObject, ObservableObject {
         guard let recorder = audioRecorder else { return }
         recorder.updateMeters()
         currentTime = recorder.currentTime
-        averagePower = recorder.averagePower(forChannel: 0)
+        let db = recorder.averagePower(forChannel: 0)
+        let normalized = max(Float(0), min(1, (db + 60) / 60))
+        averagePower = pow(normalized, 0.7)
     }
 
     private func ensureRecordingsDirectory() {

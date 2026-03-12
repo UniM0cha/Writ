@@ -38,8 +38,7 @@ struct WaveformView: View {
     private func updateBars() {
         guard isRecording else { return }
         bars.removeFirst()
-        let normalized = CGFloat(max(0, min(1, (power + 60) / 60)))
-        let curved = pow(normalized, 0.7)
+        let curved = CGFloat(max(0, min(1, power)))
         let variation = CGFloat.random(in: -0.1...0.1)
         let final = max(0, min(1, curved + variation))
         bars.append(final)

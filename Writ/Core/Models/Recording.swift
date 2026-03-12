@@ -3,12 +3,15 @@ import SwiftData
 
 @Model
 final class Recording {
-    var id: UUID
-    var createdAt: Date
-    var duration: TimeInterval
-    var audioFileName: String
+    var id: UUID = UUID()
+    var createdAt: Date = Date()
+    var duration: TimeInterval = 0
+    var audioFileName: String = ""
     var languageCode: String?
-    var sourceDevice: SourceDevice
+    var sourceDevice: SourceDevice = SourceDevice.iPhone
+
+    /// 오디오 파일 데이터 (CloudKit 동기화용, SwiftData가 외부 파일로 자동 관리)
+    @Attribute(.externalStorage) var audioData: Data?
 
     @Relationship(deleteRule: .cascade)
     var transcription: Transcription?
@@ -35,10 +38,23 @@ final class Recording {
     }
 }
 
-enum SourceDevice: String, Codable, Sendable {
+enum SourceDevice: String, Sendable {
     case iPhone
     case iPad
     case mac
     case watch
-    case keyboard
+}
+
+extension SourceDevice: Codable {
+    nonisolated init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        // "keyboard" → .iPhone 폴백 (키보드 확장 제거 후 마이그레이션)
+        self = SourceDevice(rawValue: rawValue) ?? .iPhone
+    }
+
+    nonisolated func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }

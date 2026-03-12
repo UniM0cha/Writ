@@ -10,6 +10,10 @@ iCloud 동기화는 유료 개발자 계정 전환 후 구현 예정 → 설정 
 - entitlements는 `properties:` 블록으로 값을 명시해야 보존됨
 - `platforms: [iOS]` dependency 필터가 pbxproj에 반영 안 됨 → python3으로 `platformFilter` 수동 패치 필요
 
+## 품질 검증 (필수)
+- 구현 완료 후 반드시 `feature:test-writing` → `feature:code-review` 순서로 실행
+- 구현 계획(plan) 작성 시에도 검증 단계에 test-writer + code-reviewer를 항상 명시
+
 ## 멀티플랫폼 코드 가드
 - ActivityKit, WatchConnectivity → `#if os(iOS)` 사용 (`#if canImport` 아님 — macOS SDK에 존재하나 unavailable)
 - `navigationBarTitleDisplayMode`, `.insetGrouped`, `toolbarColorScheme(_:for:.navigationBar)` → `#if os(iOS)`

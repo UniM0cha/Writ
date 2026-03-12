@@ -48,6 +48,7 @@ enum ModelState: Codable, Sendable {
     case notDownloaded
     case downloading(progress: Float)
     case downloaded
+    case optimizing
     case loading
     case loaded
     case error(String)

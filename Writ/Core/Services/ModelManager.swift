@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let logger = Logger(subsystem: AppGroupConstants.logSubsystem, category: "Model")
 
 /// 모델 다운로드, 로드, 선택, 삭제 관리
 @MainActor
@@ -8,6 +11,7 @@ final class ModelManager: ObservableObject {
 
     private let engine: WhisperKitEngine
     private let capability = DeviceCapability.current
+    private var activeLoadTask: Task<Void, any Error>?
 
     /// WhisperKit 모델 저장 기본 경로 (런타임 에러 로그에서 확인된 실제 경로)
     private static var modelsBaseURL: URL {
@@ -98,6 +102,13 @@ final class ModelManager: ObservableObject {
         }
     }
 
+    /// 다운로드/로드 취소
+    func cancelDownload(_ variant: WhisperModelVariant) {
+        activeLoadTask?.cancel()
+        activeLoadTask = nil
+        updateModelState(variant, state: Self.isModelDownloaded(variant) ? .downloaded : .notDownloaded)
+    }
+
     /// 모델 다운로드 및 로드 (선택)
     func loadModel(_ variant: WhisperModelVariant) async throws {
         // 기존 모델 메모리 해제 (CoreML 모델은 수백MB~1GB 차지)
@@ -106,14 +117,43 @@ final class ModelManager: ObservableObject {
             activeModel = nil
         }
 
-        updateModelState(variant, state: .loading)
-        do {
-            try await engine.loadModel(variant) { [weak self] progress in
-                guard let self else { return }
-                Task { @MainActor [weak self] in
-                    self?.updateModelState(variant, state: .downloading(progress: progress))
+        // 진행 중인 작업 취소 및 완료 대기
+        if let existingTask = activeLoadTask {
+            existingTask.cancel()
+            try? await existingTask.value
+        }
+
+        updateModelState(variant, state: .downloading(progress: 0))
+
+        let task = Task { [weak self] in
+            guard let self else { return }
+            try Task.checkCancellation()
+            try await engine.loadModel(
+                variant,
+                progressCallback: { [weak self] progress in
+                    guard let self else { return }
+                    Task { @MainActor [weak self] in
+                        self?.updateModelState(variant, state: .downloading(progress: progress))
+                    }
+                },
+                phaseCallback: { [weak self] phase in
+                    Task { @MainActor [weak self] in
+                        switch phase {
+                        case .optimizing:
+                            self?.updateModelState(variant, state: .optimizing)
+                        case .loading:
+                            self?.updateModelState(variant, state: .loading)
+                        }
+                    }
                 }
-            }
+            )
+        }
+        activeLoadTask = task
+
+        do {
+            try await task.value
+            activeLoadTask = nil
+
             // 기존 loaded 모델을 downloaded로 변경
             for i in models.indices {
                 if case .loaded = models[i].state {
@@ -123,7 +163,13 @@ final class ModelManager: ObservableObject {
             updateModelState(variant, state: .loaded)
             activeModel = variant
             UserDefaults.standard.set(variant.rawValue, forKey: "selectedModelVariant")
+            AppGroupConstants.sharedDefaults.set(variant.rawValue, forKey: "selectedModelVariant")
+            AppGroupConstants.sharedDefaults.set(variant.displayName, forKey: "selectedModelDisplayName")
+        } catch is CancellationError {
+            activeLoadTask = nil
+            // 취소는 cancelDownload()에서 상태 처리함
         } catch {
+            activeLoadTask = nil
             let message: String
             if error.localizedDescription.contains("No space left on device") {
                 message = "저장 공간이 부족합니다. 불필요한 파일을 삭제한 후 다시 시도해주세요."
@@ -144,7 +190,7 @@ final class ModelManager: ObservableObject {
             UserDefaults.standard.removeObject(forKey: "selectedModelVariant")
         }
 
-        // 양쪽 경로 모두 삭제
+        // 모든 경로에서 삭제 (기본, 레거시)
         let paths = [
             Self.modelsBaseURL.appendingPathComponent(variant.rawValue),
             Self.legacyModelsBaseURL.appendingPathComponent(variant.rawValue)
@@ -154,6 +200,7 @@ final class ModelManager: ObservableObject {
                 try? FileManager.default.removeItem(at: path)
             }
         }
+        AppGroupConstants.sharedDefaults.removeObject(forKey: "selectedModelVariant")
         updateModelState(variant, state: .notDownloaded)
     }
 
@@ -163,25 +210,23 @@ final class ModelManager: ObservableObject {
         language: String?,
         progressCallback: (@Sendable (Float) -> Void)?
     ) async throws -> TranscriptionOutput {
-        print("[Writ] ModelManager.transcribe: audioURL = \(audioURL.path)")
-        print("[Writ] ModelManager.transcribe: activeModel = \(String(describing: activeModel))")
-        print("[Writ] ModelManager.transcribe: language = \(String(describing: language))")
+        logger.debug("transcribe: audioURL = \(audioURL.path), activeModel = \(String(describing: self.activeModel)), language = \(String(describing: language))")
 
         guard activeModel != nil else {
-            print("[Writ] ModelManager.transcribe: ERROR - no active model")
+            logger.error("transcribe: no active model")
             throw WhisperKitEngineError.modelNotLoaded
         }
 
         do {
             let result = try await engine.transcribe(audioURL: audioURL, language: language, progressCallback: progressCallback)
-            print("[Writ] ModelManager.transcribe: success, text length = \(result.text.count)")
+            logger.debug("transcribe: success, text length = \(result.text.count)")
             return result
         } catch {
-            print("[Writ] ModelManager.transcribe: engine.transcribe failed: \(error)")
+            logger.error("transcribe: engine.transcribe failed: \(error)")
             if let current = activeModel,
                (current == .largeV3 || current == .largeV3Turbo) {
                 let fallback = capability.defaultModel
-                print("[Writ] ModelManager.transcribe: falling back to \(fallback.rawValue)")
+                logger.info("transcribe: falling back to \(fallback.rawValue)")
                 try await loadModel(fallback)
                 return try await engine.transcribe(audioURL: audioURL, language: language, progressCallback: progressCallback)
             }

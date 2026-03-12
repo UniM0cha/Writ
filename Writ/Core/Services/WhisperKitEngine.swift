@@ -1,5 +1,14 @@
 import Foundation
+import os
 import WhisperKit
+
+private let logger = Logger(subsystem: AppGroupConstants.logSubsystem, category: "Engine")
+
+/// 모델 로드 단계 (UI 피드백용)
+enum ModelLoadPhase: Sendable {
+    case optimizing
+    case loading
+}
 
 /// WhisperKit 기반 전사 엔진 구현체
 final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
@@ -13,9 +22,19 @@ final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
 
     init() {}
 
+    /// 프로토콜 준수용 (phaseCallback 없이 호출)
     func loadModel(
         _ model: WhisperModelVariant,
         progressCallback: (@Sendable (Float) -> Void)?
+    ) async throws {
+        try await loadModel(model, progressCallback: progressCallback, phaseCallback: nil)
+    }
+
+    /// ModelManager 전용: 모델 로드 단계(optimizing/loading) 콜백 포함
+    func loadModel(
+        _ model: WhisperModelVariant,
+        progressCallback: (@Sendable (Float) -> Void)?,
+        phaseCallback: (@Sendable (ModelLoadPhase) -> Void)?
     ) async throws {
         // 1. 다운로드 (이미 로컬에 있으면 스킵됨, 없으면 진행률 콜백 호출)
         let modelURL = try await WhisperKit.download(
@@ -26,13 +45,28 @@ final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
             }
         )
 
-        // 2. 로컬 모델에서 로드만 수행 (다운로드 스킵)
+        try Task.checkCancellation()
+
+        // 2. 인스턴스 생성 (로드/다운로드 안 함)
         let config = WhisperKitConfig(
             modelFolder: modelURL.path,
-            load: true,
+            prewarm: false,
+            load: false,
             download: false
         )
         let kit = try await WhisperKit(config)
+
+        try Task.checkCancellation()
+
+        // 3. Prewarm (기기 최적화 — CoreML specialization 캐시 생성)
+        phaseCallback?(.optimizing)
+        try await kit.prewarmModels()
+
+        try Task.checkCancellation()
+
+        // 4. 모델 로드
+        phaseCallback?(.loading)
+        try await kit.loadModels()
 
         lock.withLock {
             self.whisperKit = kit
@@ -52,21 +86,38 @@ final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
         language: String?,
         progressCallback: (@Sendable (Float) -> Void)?
     ) async throws -> TranscriptionOutput {
-        print("[Writ] WhisperKitEngine.transcribe: audioURL = \(audioURL.path)")
-        print("[Writ] WhisperKitEngine.transcribe: file exists = \(FileManager.default.fileExists(atPath: audioURL.path))")
+        logger.debug("transcribe: audioURL = \(audioURL.path)")
+        logger.debug("transcribe: file exists = \(FileManager.default.fileExists(atPath: audioURL.path))")
 
         guard let kit = lock.withLock({ self.whisperKit }) else {
-            print("[Writ] WhisperKitEngine.transcribe: ERROR - whisperKit is nil (model not loaded)")
+            logger.error("transcribe: whisperKit is nil (model not loaded)")
             throw WhisperKitEngineError.modelNotLoaded
         }
 
-        print("[Writ] WhisperKitEngine.transcribe: calling kit.transcribe()...")
+        logger.debug("transcribe: calling kit.transcribe()...")
         let options = DecodingOptions(language: language, skipSpecialTokens: true)
-        let results = try await kit.transcribe(audioPath: audioURL.path(), decodeOptions: options)
-        print("[Writ] WhisperKitEngine.transcribe: got \(results.count) result(s)")
+
+        // WhisperKit TranscriptionCallback 연결
+        // kit.progress (Foundation Progress)의 fractionCompleted로 0~1 진행률 산출
+        var transcriptionCallback: TranscriptionCallback = nil
+        if let progressCallback {
+            let kitProgress = kit.progress
+            transcriptionCallback = { _ -> Bool? in
+                let fraction = Float(kitProgress.fractionCompleted)
+                progressCallback(fraction)
+                return nil // continue
+            }
+        }
+
+        let results = try await kit.transcribe(
+            audioPath: audioURL.path(),
+            decodeOptions: options,
+            callback: transcriptionCallback
+        )
+        logger.debug("transcribe: got \(results.count) result(s)")
 
         guard let result = results.first else {
-            print("[Writ] WhisperKitEngine.transcribe: ERROR - no results returned")
+            logger.error("transcribe: no results returned")
             throw WhisperKitEngineError.noResult
         }
 

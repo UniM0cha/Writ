@@ -7,6 +7,7 @@ struct HistoryView: View {
     @Query(sort: \Recording.createdAt, order: .reverse) private var recordings: [Recording]
     @State private var searchText = ""
     @State private var shareItem: URL?
+    @State private var navigateToRecording: Recording?
 
     var body: some View {
         NavigationStack {
@@ -20,6 +21,16 @@ struct HistoryView: View {
             .navigationTitle("기록")
             .searchable(text: $searchText, prompt: "전사문 검색")
             .background(WritColor.background.ignoresSafeArea())
+            .navigationDestination(item: $navigateToRecording) { recording in
+                TranscriptionDetailView(recording: recording)
+            }
+            .onChange(of: appState.pendingRecordingID) { _, newID in
+                guard let idString = newID else { return }
+                if let target = recordings.first(where: { $0.id.uuidString == idString }) {
+                    navigateToRecording = target
+                }
+                appState.pendingRecordingID = nil
+            }
         }
         #if os(iOS)
         .sheet(item: $shareItem) { url in

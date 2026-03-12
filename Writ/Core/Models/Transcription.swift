@@ -3,14 +3,15 @@ import SwiftData
 
 @Model
 final class Transcription {
-    var id: UUID
-    var text: String
-    var modelUsed: String
-    var createdAt: Date
-    var status: TranscriptionStatus
+    var id: UUID = UUID()
+    var text: String = ""
+    var modelUsed: String = ""
+    var createdAt: Date = Date()
+    var status: TranscriptionStatus = TranscriptionStatus.pending
+    var progress: Float = 0
 
     @Relationship(deleteRule: .cascade)
-    var segments: [WritSegment]
+    var segments: [WritSegment]?
 
     @Relationship(inverse: \Recording.transcription)
     var recording: Recording?
@@ -21,7 +22,7 @@ final class Transcription {
         modelUsed: String = "",
         createdAt: Date = Date(),
         status: TranscriptionStatus = .pending,
-        segments: [WritSegment] = []
+        segments: [WritSegment]? = nil
     ) {
         self.id = id
         self.text = text

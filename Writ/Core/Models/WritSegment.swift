@@ -3,11 +3,11 @@ import SwiftData
 
 @Model
 final class WritSegment {
-    var id: UUID
-    var text: String
-    var startTime: TimeInterval
-    var endTime: TimeInterval
-    var orderIndex: Int
+    var id: UUID = UUID()
+    var text: String = ""
+    var startTime: TimeInterval = 0
+    var endTime: TimeInterval = 0
+    var orderIndex: Int = 0
 
     @Relationship(inverse: \Transcription.segments)
     var transcription: Transcription?

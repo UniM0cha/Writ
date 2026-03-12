@@ -7,16 +7,9 @@ struct SettingsView: View {
     @AppStorage("selectedLanguage") private var selectedLanguage = "auto"
     @AppStorage("autoDeleteDays") private var autoDeleteDays = 0
 
-    private let languages = [
-        ("auto", "자동 감지"),
-        ("ko", "한국어"),
-        ("en", "English"),
-        ("ja", "日本語"),
-        ("zh", "中文"),
-        ("es", "Español"),
-        ("fr", "Français"),
-        ("de", "Deutsch")
-    ]
+    private var languages: [(code: String, name: String)] {
+        AppGroupConstants.supportedLanguages
+    }
 
     var body: some View {
         NavigationStack {
@@ -44,6 +37,9 @@ struct SettingsView: View {
                     },
                     onDelete: {
                         Task { await appState.modelManager.deleteModel(model.variant) }
+                    },
+                    onCancel: {
+                        appState.modelManager.cancelDownload(model.variant)
                     }
                 )
             }
@@ -59,9 +55,12 @@ struct SettingsView: View {
     private var languageSection: some View {
         Section("언어") {
             Picker("인식 언어", selection: $selectedLanguage) {
-                ForEach(languages, id: \.0) { code, name in
+                ForEach(languages, id: \.code) { code, name in
                     Text(name).tag(code)
                 }
+            }
+            .onChange(of: selectedLanguage) { _, newValue in
+                AppGroupConstants.sharedDefaults.set(newValue, forKey: "selectedLanguage")
             }
         }
     }
@@ -103,6 +102,7 @@ struct ModelRowView: View {
     let isActive: Bool
     let onSelect: () -> Void
     let onDelete: () -> Void
+    let onCancel: () -> Void
 
     @State private var showDeleteConfirm = false
 
@@ -190,6 +190,7 @@ struct ModelRowView: View {
         case .loaded: WritColor.success
         case .downloaded: WritColor.accent
         case .downloading: WritColor.warning
+        case .optimizing: WritColor.warning
         case .loading: WritColor.warning
         case .error: WritColor.recordingRed
         case .notDownloaded: WritColor.secondaryText.opacity(0.3)
@@ -210,18 +211,21 @@ struct ModelRowView: View {
                 .background(WritColor.accentLight, in: Capsule())
 
         case .downloading(let progress):
-            ZStack {
-                Circle()
-                    .stroke(WritColor.secondaryText.opacity(0.2), lineWidth: 3)
-                Circle()
-                    .trim(from: 0, to: CGFloat(progress))
-                    .stroke(WritColor.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                Text("\(Int(progress * 100))")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(WritColor.secondaryText)
+            Button(action: onCancel) {
+                ZStack {
+                    Circle()
+                        .stroke(WritColor.accent.opacity(0.2), lineWidth: 3.5)
+                    Circle()
+                        .trim(from: 0, to: CGFloat(progress))
+                        .stroke(WritColor.accent, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(WritColor.accent)
+                        .frame(width: 10, height: 10)
+                }
+                .frame(width: 36, height: 36)
             }
-            .frame(width: 36, height: 36)
+            .buttonStyle(.plain)
 
         case .downloaded:
             Image(systemName: "checkmark.circle")
@@ -230,6 +234,15 @@ struct ModelRowView: View {
         case .loaded:
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(WritColor.success)
+
+        case .optimizing:
+            VStack(spacing: 2) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("최적화 중")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(WritColor.secondaryText)
+            }
 
         case .loading:
             ProgressView()

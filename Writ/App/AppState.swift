@@ -1,22 +1,43 @@
 import SwiftUI
 import SwiftData
 import Combine
+import UserNotifications
+#if os(iOS)
+import ActivityKit
+#endif
 
 /// 앱 전역 상태
 @MainActor
 final class AppState: ObservableObject {
-    @Published var isRecording = false
+    /// AppIntents에서 접근하기 위한 싱글턴
+    static let shared = AppState()
+
     @Published var selectedTab: AppTab = .record
-    @Published var pendingStopRecording = false
+    /// 알림 탭 시 이동할 녹음 ID (UUID string)
+    @Published var pendingRecordingID: String?
 
     let engine: WhisperKitEngine
     let modelManager: ModelManager
     let recorderService: AudioRecorderService
     let modelContainer: ModelContainer
+    #if os(macOS)
+    let fnKeyMonitor = FnKeyMonitor()
+    #endif
+
+    #if os(iOS)
+    var currentActivity: Activity<WritActivityAttributes>?
+    private var liveActivityTimer: Timer?
+    private var recordingStartDate: Date?
+    #endif
 
     private var cancellables = Set<AnyCancellable>()
+    private let notificationDelegate = NotificationDelegate()
+    /// 현재 전사 진행 중인 녹음 ID (중복 실행 방지)
+    private var activeTranscriptionIDs = Set<PersistentIdentifier>()
+    /// 진행률 저장 throttle용 (0.5초 간격)
+    private var lastProgressSaveDate = Date.distantPast
 
-    init() {
+    private init() {
         let engine = WhisperKitEngine()
         self.engine = engine
         self.modelManager = ModelManager(engine: engine)
@@ -30,7 +51,8 @@ final class AppState: ObservableObject {
             ])
             let config = ModelConfiguration(
                 schema: schema,
-                isStoredInMemoryOnly: false
+                isStoredInMemoryOnly: false,
+                cloudKitDatabase: .automatic
             )
             self.modelContainer = try ModelContainer(for: schema, configurations: [config])
         } catch {
@@ -52,6 +74,9 @@ final class AppState: ObservableObject {
     }
 
     func setup() async {
+        // 기존 Documents → App Group 마이그레이션
+        AppGroupConstants.migrateFromDocumentsIfNeeded()
+
         await modelManager.loadDefaultModelIfNeeded()
 
         // WatchConnectivity 설정
@@ -61,56 +86,255 @@ final class AppState: ObservableObject {
         watchSession.activate()
         #endif
 
-        // 키보드 확장 전사 요청 리스너
-        registerKeyboardTranscriptionListener()
+        // macOS fn 키 모니터 시작
+        #if os(macOS)
+        fnKeyMonitor.onFnDown = { [weak self] in
+            guard let self else { return }
+            if !recorderService.isRecording {
+                Task {
+                    _ = try? await self.recorderService.startRecording()
+                }
+            }
+        }
+        fnKeyMonitor.onFnUp = { [weak self] in
+            guard let self else { return }
+            if recorderService.isRecording {
+                stopRecordingAndTranscribe()
+            }
+        }
+        fnKeyMonitor.start()
+        #endif
+
+        // 알림 권한 요청 + delegate 설정
+        let notifCenter = UNUserNotificationCenter.current()
+        notifCenter.delegate = notificationDelegate
+        _ = try? await notifCenter.requestAuthorization(options: [.alert, .sound])
 
         // 오래된 녹음 자동 삭제
         cleanupOldRecordings()
+
+        // 중단된 전사 복구 (.pending / .inProgress 상태)
+        resumePendingTranscriptions()
     }
 
-    /// 키보드 확장에서 Darwin Notification을 통해 전사를 요청하면 처리
-    private func registerKeyboardTranscriptionListener() {
-        let center = CFNotificationCenterGetDarwinNotifyCenter()
-        let observer = Unmanaged.passUnretained(self).toOpaque()
-        CFNotificationCenterAddObserver(
-            center,
-            observer,
-            { _, observer, _, _, _ in
-                guard let observer else { return }
-                let appState = Unmanaged<AppState>.fromOpaque(observer).takeUnretainedValue()
-                Task { @MainActor in
-                    await appState.handleKeyboardTranscriptionRequest()
+    // MARK: - 녹음 시작 공통 플로우
+
+    func startRecordingFlow() async throws {
+        guard !recorderService.isRecording else { return }
+        _ = try await recorderService.startRecording()
+        selectedTab = .record
+        #if os(iOS)
+        startLiveActivity()
+        #endif
+    }
+
+    // MARK: - Live Activity 관리
+
+    #if os(iOS)
+    private func stopLiveActivityTimer() {
+        liveActivityTimer?.invalidate()
+        liveActivityTimer = nil
+    }
+
+    func startLiveActivity() {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+
+        // 기존 타이머 정리 (빠른 반복 호출 방어)
+        stopLiveActivityTimer()
+
+        let startDate = Date()
+        recordingStartDate = startDate
+        let attributes = WritActivityAttributes()
+        let state = WritActivityAttributes.ContentState.recording(duration: 0, startDate: startDate, power: 0)
+
+        do {
+            let activity = try Activity.request(
+                attributes: attributes,
+                content: .init(state: state, staleDate: nil)
+            )
+            currentActivity = activity
+
+            // 0.3초마다 averagePower push
+            liveActivityTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.pushLiveActivityPower()
                 }
-            },
-            AppGroupConstants.transcriptionRequestNotification as CFString,
-            nil,
-            .deliverImmediately
-        )
+            }
+        } catch {
+            // Live Activity 시작 실패 — 무시
+        }
     }
 
-    /// 백그라운드에서 전사 수행
+    private func pushLiveActivityPower() {
+        guard let activity = currentActivity, let startDate = recordingStartDate else { return }
+        let state = WritActivityAttributes.ContentState.recording(
+            duration: recorderService.currentTime,
+            startDate: startDate,
+            power: recorderService.averagePower
+        )
+        Task {
+            await activity.update(.init(state: state, staleDate: nil))
+        }
+    }
+
+    func updateLiveActivityToTranscribing() {
+        stopLiveActivityTimer()
+
+        guard let activity = currentActivity else { return }
+        let state = WritActivityAttributes.ContentState.transcribing()
+        Task {
+            await activity.update(.init(state: state, staleDate: nil))
+        }
+    }
+
+    func updateLiveActivityProgress(_ progress: Float) {
+        guard let activity = currentActivity else { return }
+        let state = WritActivityAttributes.ContentState.transcribing(progress: progress)
+        Task {
+            await activity.update(.init(state: state, staleDate: nil))
+        }
+    }
+
+    func updateLiveActivityToCompleted() {
+        stopLiveActivityTimer()
+        guard let activity = currentActivity else { return }
+        let state = WritActivityAttributes.ContentState.completed()
+        Task {
+            await activity.update(.init(state: state, staleDate: nil))
+            await activity.end(
+                .init(state: state, staleDate: nil),
+                dismissalPolicy: .after(Date().addingTimeInterval(2))
+            )
+        }
+        currentActivity = nil
+    }
+
+    func endLiveActivity() {
+        stopLiveActivityTimer()
+
+        guard let activity = currentActivity else { return }
+        let state = WritActivityAttributes.ContentState.recording(duration: 0, startDate: Date(), power: 0)
+        Task {
+            await activity.end(
+                .init(state: state, staleDate: nil),
+                dismissalPolicy: .immediate
+            )
+        }
+        currentActivity = nil
+    }
+    #endif
+
+    // MARK: - 녹음 중지 + 전사 (Intent 및 RecordingView에서 호출)
+
+    func stopRecordingAndTranscribe() {
+        guard let (fileName, duration) = recorderService.stopRecording() else {
+            #if os(iOS)
+            endLiveActivity()
+            #endif
+            return
+        }
+
+        let language = AppGroupConstants.resolvedLanguage(
+            from: UserDefaults.standard.string(forKey: "selectedLanguage")
+        )
+        let autoCopy = UserDefaults.standard.bool(forKey: "autoCopyEnabled")
+
+        let context = ModelContext(modelContainer)
+
+        let sourceDevice: SourceDevice = {
+            #if os(macOS)
+            return .mac
+            #else
+            return UIDevice.current.userInterfaceIdiom == .pad ? .iPad : .iPhone
+            #endif
+        }()
+
+        let recording = Recording(
+            duration: duration,
+            audioFileName: fileName,
+            languageCode: language,
+            sourceDevice: sourceDevice
+        )
+        let transcription = Transcription(
+            text: "",
+            modelUsed: modelManager.activeModel?.displayName ?? "unknown",
+            status: .pending
+        )
+        recording.transcription = transcription
+        recording.audioData = try? Data(contentsOf: recording.audioURL)
+        context.insert(recording)
+        try? context.save()
+
+        let recordingID = recording.persistentModelID
+
+        // Live Activity를 전사 상태로 전환
+        #if os(iOS)
+        updateLiveActivityToTranscribing()
+        #endif
+
+        // 백그라운드 전사 시작
+        Task {
+            await transcribeInBackground(
+                recordingID: recordingID,
+                audioFileName: fileName,
+                language: language,
+                autoCopy: autoCopy
+            )
+        }
+    }
+
+    // MARK: - 백그라운드 전사
+
     func transcribeInBackground(
         recordingID: PersistentIdentifier,
         audioFileName: String,
         language: String?,
         autoCopy: Bool
     ) async {
-        let audioURL = AppGroupConstants.recordingsDirectory.appendingPathComponent(audioFileName)
+        // 중복 전사 방지
+        guard !activeTranscriptionIDs.contains(recordingID) else { return }
+        activeTranscriptionIDs.insert(recordingID)
+        defer { activeTranscriptionIDs.remove(recordingID) }
 
-        print("[Writ] transcribeInBackground: starting for \(audioFileName)")
-        print("[Writ] transcribeInBackground: audio file exists = \(FileManager.default.fileExists(atPath: audioURL.path))")
-        print("[Writ] transcribeInBackground: model loaded = \(modelManager.activeModel != nil)")
+        #if os(iOS)
+        // Live Activity 정리 보장 (성공 시 updateLiveActivityToCompleted이 currentActivity = nil 설정)
+        defer {
+            if currentActivity != nil {
+                endLiveActivity()
+            }
+        }
+
+        // 백그라운드 태스크 요청
+        var bgTaskID: UIBackgroundTaskIdentifier = .invalid
+        let container = modelContainer
+        bgTaskID = UIApplication.shared.beginBackgroundTask {
+            // 만료 시: 동기적으로 상태 저장 후 종료
+            let expiredContext = ModelContext(container)
+            if let rec = expiredContext.model(for: recordingID) as? Recording,
+               rec.transcription?.status == .inProgress {
+                rec.transcription?.status = .pending
+                try? expiredContext.save()
+            }
+            UIApplication.shared.endBackgroundTask(bgTaskID)
+            bgTaskID = .invalid
+        }
+        defer {
+            if bgTaskID != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTaskID)
+            }
+        }
+        #endif
+
+        let audioURL = AppGroupConstants.recordingsDirectory.appendingPathComponent(audioFileName)
 
         // 모델이 아직 로드되지 않았으면 로드 대기
         if modelManager.activeModel == nil {
-            print("[Writ] transcribeInBackground: waiting for model to load...")
             await modelManager.loadDefaultModelIfNeeded()
-            print("[Writ] transcribeInBackground: model load finished, activeModel = \(String(describing: modelManager.activeModel))")
         }
 
+        let backgroundContext = ModelContext(modelContainer)
+
         guard FileManager.default.fileExists(atPath: audioURL.path) else {
-            print("[Writ] transcribeInBackground: ERROR - audio file not found at \(audioURL.path)")
-            let backgroundContext = ModelContext(modelContainer)
             if let recording = backgroundContext.model(for: recordingID) as? Recording {
                 recording.transcription?.status = .failed
                 try? backgroundContext.save()
@@ -118,26 +342,37 @@ final class AppState: ObservableObject {
             return
         }
 
-        let backgroundContext = ModelContext(modelContainer)
-
         // 상태를 inProgress로 업데이트
         if let recording = backgroundContext.model(for: recordingID) as? Recording {
-            print("[Writ] transcribeInBackground: recording found, updating status to inProgress")
             recording.transcription?.status = .inProgress
             try? backgroundContext.save()
         } else {
-            print("[Writ] transcribeInBackground: ERROR - could not find Recording for persistentModelID")
             return
         }
 
         do {
-            print("[Writ] transcribeInBackground: calling modelManager.transcribe()...")
             let output = try await modelManager.transcribe(
                 audioURL: audioURL,
                 language: language,
-                progressCallback: nil
+                progressCallback: { @Sendable progress in
+                    Task { @MainActor in
+                        let appState = AppState.shared
+                        #if os(iOS)
+                        appState.updateLiveActivityProgress(progress)
+                        #endif
+                        // SwiftData에 진행률 저장 (throttled)
+                        let now = Date()
+                        if now.timeIntervalSince(appState.lastProgressSaveDate) >= 0.5 {
+                            appState.lastProgressSaveDate = now
+                            let ctx = ModelContext(appState.modelContainer)
+                            if let rec = ctx.model(for: recordingID) as? Recording {
+                                rec.transcription?.progress = progress
+                                try? ctx.save()
+                            }
+                        }
+                    }
+                }
             )
-            print("[Writ] transcribeInBackground: transcription completed, text length = \(output.text.count)")
 
             if let recording = backgroundContext.model(for: recordingID) as? Recording {
                 let segments = output.segments.enumerated().map { index, seg in
@@ -152,30 +387,52 @@ final class AppState: ObservableObject {
                 recording.transcription?.text = output.text
                 recording.transcription?.modelUsed = modelManager.activeModel?.displayName ?? "unknown"
                 recording.transcription?.status = .completed
+                recording.transcription?.progress = 1
                 recording.transcription?.segments = segments
                 try backgroundContext.save()
-                print("[Writ] transcribeInBackground: saved successfully")
 
                 if autoCopy {
                     ClipboardService.copy(output.text)
-                    print("[Writ] transcribeInBackground: copied to clipboard")
                 }
-            } else {
-                print("[Writ] transcribeInBackground: ERROR - could not find Recording after transcription")
+
+                // Live Activity → 완료 상태 (currentActivity = nil 설정 → defer에서 중복 호출 방지)
+                #if os(iOS)
+                updateLiveActivityToCompleted()
+                #endif
+
+                await sendCompletionNotification(
+                    text: output.text,
+                    recordingID: recording.id
+                )
             }
         } catch {
-            print("[Writ] transcribeInBackground: ERROR - transcription failed: \(error)")
             if let recording = backgroundContext.model(for: recordingID) as? Recording {
                 recording.transcription?.status = .failed
                 try? backgroundContext.save()
-                print("[Writ] transcribeInBackground: marked as failed")
-            } else {
-                print("[Writ] transcribeInBackground: ERROR - could not find Recording to mark as failed")
             }
+            // defer에서 endLiveActivity 처리
         }
     }
 
-    /// 오래된 녹음 자동 삭제
+    // MARK: - 알림
+
+    private func sendCompletionNotification(text: String, recordingID: UUID) async {
+        let content = UNMutableNotificationContent()
+        content.title = "전사 완료"
+        content.body = String(text.prefix(100))
+        content.sound = .default
+        content.userInfo = ["recordingID": recordingID.uuidString]
+
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil
+        )
+        try? await UNUserNotificationCenter.current().add(request)
+    }
+
+    // MARK: - 오래된 녹음 자동 삭제
+
     func cleanupOldRecordings() {
         let autoDeleteDays = UserDefaults.standard.integer(forKey: "autoDeleteDays")
         guard autoDeleteDays > 0 else { return }
@@ -197,40 +454,64 @@ final class AppState: ObservableObject {
         try? context.save()
     }
 
-    /// 키보드에서 요청한 전사 처리
-    func handleKeyboardTranscriptionRequest() async {
-        guard let data = try? Data(contentsOf: AppGroupConstants.keyboardRequestFile),
-              let request = try? JSONSerialization.jsonObject(with: data) as? [String: String],
-              let audioPath = request["audioPath"] else { return }
+    // MARK: - 중단된 전사 복구
 
-        let audioURL = AppGroupConstants.recordingsDirectory.appendingPathComponent(audioPath)
+    private func resumePendingTranscriptions() {
+        let context = ModelContext(modelContainer)
+        let descriptor = FetchDescriptor<Recording>()
 
-        do {
-            let output = try await engine.transcribe(
-                audioURL: audioURL,
-                language: nil,
-                progressCallback: nil
-            )
+        guard let allRecordings = try? context.fetch(descriptor) else { return }
+        let pendingRecordings = allRecordings.filter {
+            $0.transcription?.status == .pending || $0.transcription?.status == .inProgress
+        }
+        guard !pendingRecordings.isEmpty else { return }
 
-            // 결과 파일에 저장
-            let result: [String: String] = ["text": output.text]
-            if let resultData = try? JSONSerialization.data(withJSONObject: result) {
-                try? resultData.write(to: AppGroupConstants.keyboardResultFile)
-            }
+        let autoCopy = UserDefaults.standard.bool(forKey: "autoCopyEnabled")
+        let language = AppGroupConstants.resolvedLanguage(
+            from: UserDefaults.standard.string(forKey: "selectedLanguage")
+        )
 
-            // 최근 전사문 파일에도 저장 (최근 전사문 삽입 기능용)
-            let recentFile = AppGroupConstants.containerURL.appendingPathComponent("recent_transcription.txt")
-            try? output.text.write(to: recentFile, atomically: true, encoding: .utf8)
+        // ModelContext 해제 후에도 안전하도록 값을 미리 추출
+        let items = pendingRecordings.map { ($0.persistentModelID, $0.audioFileName) }
 
-            // 요청 파일 정리
-            try? FileManager.default.removeItem(at: AppGroupConstants.keyboardRequestFile)
-        } catch {
-            // 전사 실패 시 에러 결과 저장
-            let result: [String: String] = ["error": error.localizedDescription]
-            if let resultData = try? JSONSerialization.data(withJSONObject: result) {
-                try? resultData.write(to: AppGroupConstants.keyboardResultFile)
+        Task {
+            for (id, fileName) in items {
+                await transcribeInBackground(
+                    recordingID: id,
+                    audioFileName: fileName,
+                    language: language,
+                    autoCopy: autoCopy
+                )
             }
         }
+    }
+}
+
+// MARK: - Notification Delegate
+
+private final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        if let recordingID = userInfo["recordingID"] as? String {
+            Task { @MainActor in
+                AppState.shared.selectedTab = .history
+                AppState.shared.pendingRecordingID = recordingID
+            }
+        }
+        completionHandler()
+    }
+
+    // 앱이 foreground일 때도 알림 표시
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
     }
 }
 

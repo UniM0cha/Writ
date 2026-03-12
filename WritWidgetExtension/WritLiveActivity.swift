@@ -1,8 +1,13 @@
 import ActivityKit
+import AppIntents
 import SwiftUI
 import WidgetKit
 
 // WritActivityAttributes는 Writ/Core/Models/WritActivityAttributes.swift에서 공유
+
+private extension Color {
+    static let writRecordingRed = Color(red: 1, green: 0.231, blue: 0.188)
+}
 
 // MARK: - Live Activity Widget
 
@@ -14,69 +19,176 @@ struct WritLiveActivity: Widget {
 
         } dynamicIsland: { context in
             DynamicIsland {
-                // Expanded — Apple 음성 메모 스타일
+                // Expanded
                 DynamicIslandExpandedRegion(.leading) {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(Color(red: 1, green: 0.231, blue: 0.188))
-                            .frame(width: 8, height: 8)
-                        Text("녹음 중")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.7))
-                    }
+                    phaseIndicator(phase: context.state.phase)
                 }
                 DynamicIslandExpandedRegion(.center) {
-                    Text(context.state.recordingStartDate, style: .timer)
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .monospacedDigit()
+                    expandedCenter(context: context)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Link(destination: URL(string: "writ://stop-recording")!) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color(red: 1, green: 0.231, blue: 0.188))
-                                .frame(width: 32, height: 32)
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(.white)
-                                .frame(width: 12, height: 12)
-                        }
-                    }
+                    expandedTrailing(context: context)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    PowerWaveformView(
-                        barCount: 20,
-                        barWidth: 3,
-                        barSpacing: 2,
-                        frameHeight: 24,
-                        barColor: Color(red: 1, green: 0.231, blue: 0.188),
-                        power: CGFloat(context.state.averagePower)
-                    )
+                    EmptyView()
                 }
             } compactLeading: {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(Color(red: 1, green: 0.231, blue: 0.188))
-                        .frame(width: 8, height: 8)
-                    Text(context.state.recordingStartDate, style: .timer)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .monospacedDigit()
-                }
+                compactLeadingContent(context: context)
             } compactTrailing: {
-                PowerWaveformView(
-                    barCount: 5,
-                    barWidth: 2,
-                    barSpacing: 1.5,
-                    frameHeight: 14,
-                    barColor: Color(red: 1, green: 0.231, blue: 0.188),
-                    power: CGFloat(context.state.averagePower)
-                )
+                compactTrailingContent(context: context)
             } minimal: {
-                Circle()
-                    .fill(Color(red: 1, green: 0.231, blue: 0.188))
-                    .frame(width: 8, height: 8)
+                minimalContent(phase: context.state.phase)
             }
+        }
+    }
+
+    // MARK: - Dynamic Island Expanded
+
+    @ViewBuilder
+    private func phaseIndicator(phase: ActivityPhase) -> some View {
+        switch phase {
+        case .recording:
+            Circle()
+                .fill(Color.writRecordingRed)
+                .frame(width: 10, height: 10)
+        case .transcribing:
+            Circle()
+                .fill(.blue)
+                .frame(width: 10, height: 10)
+        case .completed:
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 14))
+                .foregroundStyle(.green)
+        }
+    }
+
+    @ViewBuilder
+    private func expandedCenter(context: ActivityViewContext<WritActivityAttributes>) -> some View {
+        switch context.state.phase {
+        case .recording:
+            Text(context.state.recordingStartDate, style: .timer)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white)
+                .monospacedDigit()
+        case .transcribing:
+            VStack(spacing: 4) {
+                Text("전사 중...")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white)
+                ProgressView(value: Double(context.state.transcriptionProgress))
+                    .tint(.blue)
+            }
+        case .completed:
+            Text("클립보드에 복사됨")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.white)
+        }
+    }
+
+    @ViewBuilder
+    private func expandedTrailing(context: ActivityViewContext<WritActivityAttributes>) -> some View {
+        switch context.state.phase {
+        case .recording:
+            Button(intent: StopRecordingIntent()) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.writRecordingRed)
+                        .frame(width: 32, height: 32)
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(.white)
+                        .frame(width: 12, height: 12)
+                }
+            }
+            .buttonStyle(.plain)
+        case .transcribing:
+            ProgressView()
+                .tint(.blue)
+                .frame(width: 32, height: 32)
+        case .completed:
+            Image(systemName: "doc.on.clipboard.fill")
+                .font(.system(size: 16))
+                .foregroundStyle(.green)
+                .frame(width: 32, height: 32)
+        }
+    }
+
+    // MARK: - Compact
+
+    @ViewBuilder
+    private func compactLeadingContent(context: ActivityViewContext<WritActivityAttributes>) -> some View {
+        switch context.state.phase {
+        case .recording:
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Color.writRecordingRed)
+                    .frame(width: 8, height: 8)
+                Text(context.state.recordingStartDate, style: .timer)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .monospacedDigit()
+            }
+        case .transcribing:
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(.blue)
+                    .frame(width: 8, height: 8)
+                Text("전사 중")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+        case .completed:
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.green)
+                Text("복사됨")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func compactTrailingContent(context: ActivityViewContext<WritActivityAttributes>) -> some View {
+        switch context.state.phase {
+        case .recording:
+            PowerWaveformView(
+                barCount: 3,
+                barWidth: 2,
+                barSpacing: 1.5,
+                frameHeight: 14,
+                barColor: Color.writRecordingRed,
+                power: CGFloat(context.state.averagePower)
+            )
+        case .transcribing:
+            Text("\(Int(context.state.transcriptionProgress * 100))%")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.blue)
+                .monospacedDigit()
+        case .completed:
+            Image(systemName: "doc.on.clipboard")
+                .font(.system(size: 12))
+                .foregroundStyle(.green)
+        }
+    }
+
+    // MARK: - Minimal
+
+    @ViewBuilder
+    private func minimalContent(phase: ActivityPhase) -> some View {
+        switch phase {
+        case .recording:
+            Circle()
+                .fill(Color.writRecordingRed)
+                .frame(width: 8, height: 8)
+        case .transcribing:
+            Circle()
+                .fill(.blue)
+                .frame(width: 8, height: 8)
+        case .completed:
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(.green)
         }
     }
 }
@@ -129,48 +241,99 @@ private struct LockScreenLiveActivityView: View {
                         )
                     )
                     .frame(width: 36, height: 36)
-                Image(systemName: "mic.fill")
+                Image(systemName: phaseIcon)
                     .font(.system(size: 18))
                     .foregroundStyle(.white)
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("녹음 중")
+                Text(phaseTitle)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.white)
-                Text(context.state.recordingStartDate, style: .timer)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .monospacedDigit()
+                phaseSubtitle
             }
 
             Spacer()
 
-            // 파형
-            PowerWaveformView(
-                barCount: 7,
-                barWidth: 2,
-                barSpacing: 1.5,
-                frameHeight: 16,
-                barColor: .white.opacity(0.6),
-                power: CGFloat(context.state.averagePower)
-            )
-
-            // 정지 버튼
-            Link(destination: URL(string: "writ://stop-recording")!) {
-                ZStack {
-                    Circle()
-                        .fill(Color(red: 1, green: 0.231, blue: 0.188))
-                        .frame(width: 32, height: 32)
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(.white)
-                        .frame(width: 10, height: 10)
-                }
-            }
+            // 오른쪽 영역
+            trailingContent
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .activityBackgroundTint(.black.opacity(0.8))
+    }
+
+    private var phaseIcon: String {
+        switch context.state.phase {
+        case .recording: "mic.fill"
+        case .transcribing: "text.bubble.fill"
+        case .completed: "checkmark.circle.fill"
+        }
+    }
+
+    private var phaseTitle: String {
+        switch context.state.phase {
+        case .recording: "녹음 중"
+        case .transcribing: "전사 중..."
+        case .completed: "클립보드에 복사됨"
+        }
+    }
+
+    @ViewBuilder
+    private var phaseSubtitle: some View {
+        switch context.state.phase {
+        case .recording:
+            Text(context.state.recordingStartDate, style: .timer)
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.6))
+                .monospacedDigit()
+        case .transcribing:
+            Text("\(Int(context.state.transcriptionProgress * 100))%")
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.6))
+                .monospacedDigit()
+        case .completed:
+            Text("붙여넣기하세요")
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.6))
+        }
+    }
+
+    @ViewBuilder
+    private var trailingContent: some View {
+        switch context.state.phase {
+        case .recording:
+            HStack(spacing: 12) {
+                PowerWaveformView(
+                    barCount: 7,
+                    barWidth: 2,
+                    barSpacing: 1.5,
+                    frameHeight: 16,
+                    barColor: .white.opacity(0.6),
+                    power: CGFloat(context.state.averagePower)
+                )
+
+                Button(intent: StopRecordingIntent()) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.writRecordingRed)
+                            .frame(width: 32, height: 32)
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(.white)
+                            .frame(width: 10, height: 10)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        case .transcribing:
+            ProgressView(value: Double(context.state.transcriptionProgress))
+                .tint(.blue)
+                .frame(width: 60)
+        case .completed:
+            Image(systemName: "doc.on.clipboard.fill")
+                .font(.system(size: 20))
+                .foregroundStyle(.green)
+        }
     }
 }
 
@@ -211,17 +374,7 @@ struct WritWidgetProvider: TimelineProvider {
     }
 
     private func currentModelName() -> String {
-        if let rawValue = UserDefaults.standard.string(forKey: "selectedModelVariant") {
-            switch rawValue {
-            case "openai_whisper-tiny": return "Tiny"
-            case "openai_whisper-base": return "Base"
-            case "openai_whisper-small": return "Small"
-            case "openai_whisper-large-v3": return "Large v3"
-            case "openai_whisper-large-v3_turbo": return "Large v3 Turbo"
-            default: return rawValue
-            }
-        }
-        return "준비 중"
+        AppGroupConstants.sharedDefaults.string(forKey: "selectedModelDisplayName") ?? "준비 중"
     }
 }
 

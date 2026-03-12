@@ -54,6 +54,7 @@ targets:
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: 1
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: Writ/Info.plist
         ENABLE_APP_SANDBOX: NO
         ENABLE_HARDENED_RUNTIME: NO
         ENABLE_PREVIEWS: YES
@@ -76,17 +77,15 @@ targets:
         platforms: [iOS]
         copy:
           destination: plugins
-      - target: WritKeyboard
-        embed: true
-        codeSign: true
-        platforms: [iOS]
-        copy:
-          destination: plugins
     entitlements:
       path: Writ/Writ.entitlements
       properties:
         com.apple.security.application-groups:
           - group.com.solstice.writ
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.com.solstice.Writ
+        com.apple.developer.icloud-services:
+          - CloudKit
 
   # ─── Widget Extension (Live Activity + Home Widget) ───
   WritWidgetExtension:
@@ -96,9 +95,12 @@ targets:
       - path: WritWidgetExtension
         createIntermediateGroups: true
       - path: Writ/Core/Models/WritActivityAttributes.swift
+      - path: Writ/Core/Utilities/AppGroupConstants.swift
+      - path: Writ/AppIntents/LiveActivityIntents.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.solstice.Writ.WritWidgetExtension
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) WIDGET_EXTENSION"
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: 1
         GENERATE_INFOPLIST_FILE: YES
@@ -109,32 +111,6 @@ targets:
         SKIP_INSTALL: YES
         SWIFT_EMIT_LOC_STRINGS: YES
         CODE_SIGN_ENTITLEMENTS: WritWidgetExtension/WritWidgetExtension.entitlements
-
-  # ─── Keyboard Extension ───
-  WritKeyboard:
-    type: app-extension
-    platform: iOS
-    sources:
-      - path: WritKeyboard
-        createIntermediateGroups: true
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.solstice.Writ.WritKeyboard
-        MARKETING_VERSION: "1.0"
-        CURRENT_PROJECT_VERSION: 1
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_FILE: WritKeyboard/Info.plist
-        INFOPLIST_KEY_CFBundleDisplayName: Writ 키보드
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: "음성을 텍스트로 변환하기 위해 마이크 접근이 필요합니다."
-        TARGETED_DEVICE_FAMILY: "1,2"
-        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
-        SKIP_INSTALL: YES
-        SWIFT_EMIT_LOC_STRINGS: YES
-    entitlements:
-      path: WritKeyboard/WritKeyboard.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - group.com.solstice.writ
 
   # ─── Unit Tests ───
   WritTests:
@@ -169,3 +145,18 @@ targets:
         SKIP_INSTALL: YES
         SWIFT_EMIT_LOC_STRINGS: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+schemes:
+  Writ:
+    build:
+      targets:
+        Writ: all
+        WritWidgetExtension: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - WritTests
+    archive:
+      config: Release

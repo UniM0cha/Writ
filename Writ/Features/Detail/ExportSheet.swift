@@ -123,7 +123,15 @@ struct ExportSheet: View {
         try? text.write(to: tempURL, atomically: true, encoding: .utf8)
         #if os(iOS)
         shareItem = tempURL
-        #else
+        #elseif os(macOS)
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = fileName
+        panel.begin { response in
+            if response == .OK, let url = panel.url {
+                try? FileManager.default.removeItem(at: url)
+                try? FileManager.default.copyItem(at: tempURL, to: url)
+            }
+        }
         dismiss()
         #endif
     }

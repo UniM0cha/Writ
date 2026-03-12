@@ -26,3 +26,6 @@ Package.resolved
 
 # Superpowers (brainstorm artifacts)
 .superpowers/
+
+# Serena MCP
+.serena/

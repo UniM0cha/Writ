@@ -90,13 +90,12 @@ final class LiveActivityManager: ObservableObject {
 
     /// 전사 → 완료 전환. DI에서 2초간 완료 상태를 보여준 후 종료.
     /// dismissalPolicy는 잠금 화면에만 영향 — DI는 end() 시 즉시 사라지므로 sleep으로 지연.
+    /// phase는 즉시 idle로 전환하여 새 녹음 시작을 차단하지 않는다.
     func transitionToCompleted() {
         guard phase == .transcribing else {
             logger.warning("transitionToCompleted ignored: phase=\(self.phase.rawValue)")
             return
         }
-
-        phase = .completed
 
         guard let activity = currentActivity else {
             phase = .idle
@@ -104,6 +103,8 @@ final class LiveActivityManager: ObservableObject {
         }
 
         currentActivity = nil
+        phase = .idle
+
         let state = WritActivityAttributes.ContentState.completed()
         Task {
             await activity.update(.init(state: state, staleDate: nil))
@@ -112,7 +113,6 @@ final class LiveActivityManager: ObservableObject {
                 .init(state: state, staleDate: nil),
                 dismissalPolicy: .default
             )
-            self.phase = .idle
         }
     }
 

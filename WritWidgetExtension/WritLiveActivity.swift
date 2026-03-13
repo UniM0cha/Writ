@@ -54,7 +54,10 @@ struct WritLiveActivity: Widget {
         case .transcribing:
             EmptyView()
         case .completed:
-            EmptyView()
+            Text("전사 완료")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(maxHeight: .infinity, alignment: .center)
         }
     }
 
@@ -73,10 +76,7 @@ struct WritLiveActivity: Widget {
             }
             .frame(maxHeight: .infinity, alignment: .center)
         case .completed:
-            Text("전사 완료")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white)
-                .frame(maxHeight: .infinity, alignment: .center)
+            EmptyView()
         }
     }
 

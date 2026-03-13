@@ -116,6 +116,30 @@ final class LiveActivityManager: ObservableObject {
         }
     }
 
+    /// 큐 대기 항목 처리 시 idle→transcribing 직접 전환 (recording phase를 거치지 않음)
+    func startTranscribingDirectly() {
+        guard phase == .idle else {
+            logger.warning("startTranscribingDirectly ignored: phase=\(self.phase.rawValue)")
+            return
+        }
+
+        phase = .transcribing
+        lastProgressUpdate = .distantPast
+
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+
+        let state = WritActivityAttributes.ContentState.transcribing()
+        do {
+            let activity = try Activity.request(
+                attributes: WritActivityAttributes(),
+                content: .init(state: state, staleDate: nil)
+            )
+            currentActivity = activity
+        } catch {
+            logger.error("Activity.request failed: \(error)")
+        }
+    }
+
     /// 즉시 종료 (취소/에러). 어떤 phase에서든 호출 가능.
     func end() {
         if let activity = currentActivity {

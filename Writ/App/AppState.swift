@@ -24,18 +24,20 @@ final class AppState: ObservableObject {
     let fnKeyMonitor = FnKeyMonitor()
     #endif
 
-    #if os(iOS)
-    let liveActivityManager = LiveActivityManager()
-
-    /// BGContinuedProcessingTask에 전달할 대기 전사 정보
+    /// 전사 큐 항목
     private struct PendingBGTranscription {
         let recordingID: PersistentIdentifier
         let audioFileName: String
         let language: String?
         let autoCopy: Bool
     }
-    private var pendingBGTranscription: PendingBGTranscription?
+    /// 순차 처리 전사 큐 (ANE 경합 방지)
+    private var transcriptionQueue: [PendingBGTranscription] = []
+    /// 큐 처리 루프 실행 중 여부
+    private var isProcessingQueue = false
 
+    #if os(iOS)
+    let liveActivityManager = LiveActivityManager()
     /// 현재 활성 BGContinuedProcessingTask (전사 진행률 연동용)
     private var activeBGTask: BGContinuedProcessingTask?
     #endif
@@ -210,47 +212,44 @@ final class AppState: ObservableObject {
 
         let recordingID = recording.persistentModelID
 
-        #if os(iOS)
-        // Live Activity를 전사 상태로 전환
-        liveActivityManager.transitionToTranscribing()
-
-        // BGContinuedProcessingTask 등록 및 제출
-        pendingBGTranscription = PendingBGTranscription(
+        let item = PendingBGTranscription(
             recordingID: recordingID,
             audioFileName: fileName,
             language: language,
             autoCopy: autoCopy
         )
+        transcriptionQueue.append(item)
 
-        let request = BGContinuedProcessingTaskRequest(
-            identifier: "com.solstice.writ.transcribe",
-            title: "전사 중",
-            subtitle: "음성을 텍스트로 변환하고 있습니다"
-        )
-        request.strategy = .fail
+        #if os(iOS)
+        // 녹음→전사 전환: 첫 항목이면 DI 전환, 이미 큐 처리 중이면 대기
+        if !isProcessingQueue {
+            liveActivityManager.transitionToTranscribing()
+        }
 
-        do {
-            try BGTaskScheduler.shared.submit(request)
-        } catch {
-            // BGTask 제출 실패 시 fallback: 직접 전사 실행
-            Task {
-                await self.transcribeInBackground(
-                    recordingID: recordingID,
-                    audioFileName: fileName,
-                    language: language,
-                    autoCopy: autoCopy
-                )
+        // BGTask 제출 (큐 첫 항목일 때만)
+        if !isProcessingQueue {
+            let request = BGContinuedProcessingTaskRequest(
+                identifier: "com.solstice.writ.transcribe",
+                title: "전사 중",
+                subtitle: "음성을 텍스트로 변환하고 있습니다"
+            )
+            request.strategy = .fail
+
+            do {
+                try BGTaskScheduler.shared.submit(request)
+            } catch {
+                // BGTask 제출 실패 시 fallback: 직접 큐 처리
+                Task {
+                    await self.processNextInQueue()
+                }
             }
         }
         #else
-        // macOS: 백그라운드 제한 없음, 직접 실행
-        Task {
-            await self.transcribeInBackground(
-                recordingID: recordingID,
-                audioFileName: fileName,
-                language: language,
-                autoCopy: autoCopy
-            )
+        // macOS: 백그라운드 제한 없음, 직접 큐 처리
+        if !isProcessingQueue {
+            Task {
+                await self.processNextInQueue()
+            }
         }
         #endif
     }
@@ -259,40 +258,40 @@ final class AppState: ObservableObject {
 
     #if os(iOS)
     private func performBGTranscription(bgTask: BGContinuedProcessingTask) async {
-        guard let pending = pendingBGTranscription else {
+        guard !transcriptionQueue.isEmpty else {
             bgTask.setTaskCompleted(success: false)
             return
         }
-        pendingBGTranscription = nil
         activeBGTask = bgTask
 
-        // expiration handler 설정
+        // expiration handler: 진행 중인 전사를 pending으로 되돌림
         let container = modelContainer
-        let recordingID = pending.recordingID
         bgTask.expirationHandler = { @Sendable [weak bgTask] in
-            let expiredContext = ModelContext(container)
-            if let rec = expiredContext.model(for: recordingID) as? Recording,
-               rec.transcription?.status == .inProgress {
-                rec.transcription?.status = .pending
-                try? expiredContext.save()
+            Task { @MainActor in
+                let appState = AppState.shared
+                // 진행 중인 전사를 pending으로 복원
+                let ctx = ModelContext(container)
+                for id in appState.activeTranscriptionIDs {
+                    if let rec = ctx.model(for: id) as? Recording,
+                       rec.transcription?.status == .inProgress {
+                        rec.transcription?.status = .pending
+                    }
+                }
+                try? ctx.save()
+                appState.activeBGTask = nil
             }
             bgTask?.setTaskCompleted(success: false)
         }
         bgTask.progress.totalUnitCount = 100
         bgTask.progress.completedUnitCount = 0
 
-        await transcribeInBackground(
-            recordingID: pending.recordingID,
-            audioFileName: pending.audioFileName,
-            language: pending.language,
-            autoCopy: pending.autoCopy
-        )
+        await processNextInQueue()
 
-        // transcribeInBackground 내부에서 setTaskCompleted가 호출되지 않는 경로 보장 (duplicate guard 등)
+        // expiration handler에서 이미 처리되지 않은 경우에만 완료 처리
         if activeBGTask != nil {
-            bgTask.setTaskCompleted(success: false)
+            bgTask.setTaskCompleted(success: true)
+            activeBGTask = nil
         }
-        activeBGTask = nil
     }
     #endif
 
@@ -310,10 +309,11 @@ final class AppState: ObservableObject {
         defer { activeTranscriptionIDs.remove(recordingID) }
 
         #if os(iOS)
-        // Live Activity 정리 보장 (completed는 transitionToCompleted()가 자체 종료 처리)
+        // Live Activity 정리 보장 — 큐에 다음 항목이 없을 때만 종료
+        // (다음 항목이 있으면 processNextInQueue에서 재활용)
         defer {
             let p = liveActivityManager.phase
-            if p != .idle && p != .completed {
+            if p != .idle && p != .completed && transcriptionQueue.isEmpty {
                 liveActivityManager.end()
             }
         }
@@ -333,10 +333,6 @@ final class AppState: ObservableObject {
                 recording.transcription?.status = .failed
                 try? backgroundContext.save()
             }
-            #if os(iOS)
-            activeBGTask?.setTaskCompleted(success: false)
-            activeBGTask = nil
-            #endif
             return
         }
 
@@ -345,10 +341,6 @@ final class AppState: ObservableObject {
             recording.transcription?.status = .inProgress
             try? backgroundContext.save()
         } else {
-            #if os(iOS)
-            activeBGTask?.setTaskCompleted(success: false)
-            activeBGTask = nil
-            #endif
             return
         }
 
@@ -401,8 +393,6 @@ final class AppState: ObservableObject {
                 // Live Activity → 완료 상태
                 #if os(iOS)
                 liveActivityManager.transitionToCompleted()
-                activeBGTask?.setTaskCompleted(success: true)
-                activeBGTask = nil
                 #endif
 
                 await sendCompletionNotification(
@@ -415,10 +405,6 @@ final class AppState: ObservableObject {
                 recording.transcription?.status = .failed
                 try? backgroundContext.save()
             }
-            #if os(iOS)
-            activeBGTask?.setTaskCompleted(success: false)
-            activeBGTask = nil
-            #endif
         }
     }
 
@@ -462,6 +448,40 @@ final class AppState: ObservableObject {
         try? context.save()
     }
 
+    // MARK: - 전사 큐 처리
+
+    /// 큐에서 항목을 하나씩 꺼내어 순차 전사. ANE 경합 방지.
+    private func processNextInQueue() async {
+        guard !isProcessingQueue else { return }
+        isProcessingQueue = true
+        defer { isProcessingQueue = false }
+
+        while let item = transcriptionQueue.first {
+            transcriptionQueue.removeFirst()
+
+            // 큐 대기 항목: idle→transcribing 직접 전환 (recording phase 없이)
+            #if os(iOS)
+            if liveActivityManager.phase == .idle {
+                liveActivityManager.startTranscribingDirectly()
+            }
+            #endif
+
+            await transcribeInBackground(
+                recordingID: item.recordingID,
+                audioFileName: item.audioFileName,
+                language: item.language,
+                autoCopy: item.autoCopy
+            )
+
+            // 다음 항목 전 딜레이 (DI 완료 표시 시간 확보)
+            #if os(iOS)
+            if !transcriptionQueue.isEmpty {
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            #endif
+        }
+    }
+
     // MARK: - 중단된 전사 복구
 
     func resumePendingTranscriptions() {
@@ -487,15 +507,21 @@ final class AppState: ObservableObject {
         // ModelContext 해제 후에도 안전하도록 값을 미리 추출
         let items = pendingRecordings.map { ($0.persistentModelID, $0.audioFileName) }
 
+        for (id, fileName) in items {
+            // 이미 전사 중이거나 큐에 있는 항목은 중복 enqueue 방지
+            guard !activeTranscriptionIDs.contains(id),
+                  !transcriptionQueue.contains(where: { $0.recordingID == id })
+            else { continue }
+            transcriptionQueue.append(PendingBGTranscription(
+                recordingID: id,
+                audioFileName: fileName,
+                language: language,
+                autoCopy: autoCopy
+            ))
+        }
+
         Task {
-            for (id, fileName) in items {
-                await transcribeInBackground(
-                    recordingID: id,
-                    audioFileName: fileName,
-                    language: language,
-                    autoCopy: autoCopy
-                )
-            }
+            await processNextInQueue()
         }
     }
 }

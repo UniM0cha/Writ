@@ -24,19 +24,16 @@ packages:
     from: "0.16.0"
 
 targets:
-  # ─── Main App (iOS) ───
+  # ─── Main App (iOS + macOS) ───
   Writ:
     type: application
-    platform: iOS
+    supportedDestinations: [iOS, macOS]
     sources:
       - path: Writ
         createIntermediateGroups: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.solstice.Writ
-        SDKROOT: auto
-        SUPPORTS_MACCATALYST: NO
-        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "음성을 텍스트로 변환하기 위해 마이크 접근이 필요합니다."
         INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]: YES
@@ -75,7 +72,7 @@ targets:
       - target: WritWidgetExtension
         embed: true
         codeSign: true
-        platforms: [iOS]
+        destinationFilters: [iOS]
         copy:
           destination: plugins
     entitlements:

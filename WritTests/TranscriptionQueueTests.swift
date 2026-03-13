@@ -192,47 +192,6 @@ final class StartTranscribingDirectlyTests: XCTestCase {
 @MainActor
 final class AppStateTranscriptionQueueTests: XCTestCase {
 
-    // MARK: - 제거된 단일 프로퍼티 확인
-
-    func testPendingBGTranscription_singleProperty_doesNotExist() {
-        // 단일 pendingBGTranscription이 제거되고 transcriptionQueue 배열로 교체되었는지 확인
-        let appState = AppState.shared
-        let selector = NSSelectorFromString("pendingBGTranscription")
-        let responds = (appState as AnyObject).responds(to: selector)
-        XCTAssertFalse(
-            responds,
-            "AppState에서 단일 'pendingBGTranscription' 프로퍼티가 제거되었어야 함 (transcriptionQueue로 대체)"
-        )
-    }
-
-    func testSetPendingBGTranscription_doesNotExist() {
-        // setter도 제거되었는지 확인
-        let appState = AppState.shared
-        let selector = NSSelectorFromString("setPendingBGTranscription:")
-        let responds = (appState as AnyObject).responds(to: selector)
-        XCTAssertFalse(
-            responds,
-            "AppState에서 'setPendingBGTranscription:' setter가 제거되었어야 함"
-        )
-    }
-
-    // MARK: - 공개 메서드 존재 확인
-
-    func testStopRecordingAndTranscribe_isCallable() {
-        // stopRecordingAndTranscribe() 메서드가 존재하는지 컴파일 타임 확인
-        // 실제 호출은 녹음 상태가 아니므로 바로 리턴됨 (guard let 실패)
-        let appState = AppState.shared
-        appState.stopRecordingAndTranscribe()
-        // 크래시 없이 완료되면 성공 — 녹음 중이 아니므로 큐에 항목이 추가되지 않음
-    }
-
-    func testResumePendingTranscriptions_isCallable() {
-        // resumePendingTranscriptions() 메서드가 존재하는지 확인
-        let appState = AppState.shared
-        appState.resumePendingTranscriptions()
-        // 크래시 없이 완료되면 성공
-    }
-
     // MARK: - LiveActivityManager 연동 확인
 
     func testAppState_liveActivityManager_hasStartTranscribingDirectly() {

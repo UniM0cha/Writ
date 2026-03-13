@@ -25,14 +25,14 @@ final class AppState: ObservableObject {
     #endif
 
     /// 전사 큐 항목
-    private struct PendingBGTranscription {
+    private struct TranscriptionQueueItem {
         let recordingID: PersistentIdentifier
         let audioFileName: String
         let language: String?
         let autoCopy: Bool
     }
     /// 순차 처리 전사 큐 (ANE 경합 방지)
-    private var transcriptionQueue: [PendingBGTranscription] = []
+    private var transcriptionQueue: [TranscriptionQueueItem] = []
     /// 큐 처리 루프 실행 중 여부
     private var isProcessingQueue = false
 
@@ -212,7 +212,7 @@ final class AppState: ObservableObject {
 
         let recordingID = recording.persistentModelID
 
-        let item = PendingBGTranscription(
+        let item = TranscriptionQueueItem(
             recordingID: recordingID,
             audioFileName: fileName,
             language: language,
@@ -221,13 +221,10 @@ final class AppState: ObservableObject {
         transcriptionQueue.append(item)
 
         #if os(iOS)
-        // 녹음→전사 전환: 첫 항목이면 DI 전환, 이미 큐 처리 중이면 대기
+        // 큐 첫 항목: DI 전환 + BGTask 제출. 이미 큐 처리 중이면 대기.
         if !isProcessingQueue {
             liveActivityManager.transitionToTranscribing()
-        }
 
-        // BGTask 제출 (큐 첫 항목일 때만)
-        if !isProcessingQueue {
             let request = BGContinuedProcessingTaskRequest(
                 identifier: "com.solstice.writ.transcribe",
                 title: "전사 중",
@@ -279,8 +276,8 @@ final class AppState: ObservableObject {
                 }
                 try? ctx.save()
                 appState.activeBGTask = nil
+                bgTask?.setTaskCompleted(success: false)
             }
-            bgTask?.setTaskCompleted(success: false)
         }
         bgTask.progress.totalUnitCount = 100
         bgTask.progress.completedUnitCount = 0
@@ -512,7 +509,7 @@ final class AppState: ObservableObject {
             guard !activeTranscriptionIDs.contains(id),
                   !transcriptionQueue.contains(where: { $0.recordingID == id })
             else { continue }
-            transcriptionQueue.append(PendingBGTranscription(
+            transcriptionQueue.append(TranscriptionQueueItem(
                 recordingID: id,
                 audioFileName: fileName,
                 language: language,

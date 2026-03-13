@@ -10,7 +10,7 @@ private let logger = Logger(subsystem: AppGroupConstants.logSubsystem, category:
 /// 상태 전이:
 /// ```
 /// idle → recording → transcribing → completed → idle
-///                  ↘ idle (cancel)  ↘ idle (fail)
+///    ↘ transcribing ↗ ↘ idle (cancel)  ↘ idle (fail)
 /// ```
 @MainActor
 final class LiveActivityManager: ObservableObject {
@@ -39,24 +39,7 @@ final class LiveActivityManager: ObservableObject {
         phase = .recording
         recordingStartDate = startDate
 
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            logger.info("Live Activities disabled by user")
-            return
-        }
-
-        let state = WritActivityAttributes.ContentState.recording(
-            duration: 0, startDate: startDate, power: 0
-        )
-        do {
-            let activity = try Activity.request(
-                attributes: WritActivityAttributes(),
-                content: .init(state: state, staleDate: nil)
-            )
-            currentActivity = activity
-            logger.debug("Activity started: \(activity.id)")
-        } catch {
-            logger.error("Activity.request failed: \(error)")
-        }
+        requestActivity(state: .recording(duration: 0, startDate: startDate, power: 0))
     }
 
     /// 녹음 → 전사 전환
@@ -126,18 +109,7 @@ final class LiveActivityManager: ObservableObject {
         phase = .transcribing
         lastProgressUpdate = .distantPast
 
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-
-        let state = WritActivityAttributes.ContentState.transcribing()
-        do {
-            let activity = try Activity.request(
-                attributes: WritActivityAttributes(),
-                content: .init(state: state, staleDate: nil)
-            )
-            currentActivity = activity
-        } catch {
-            logger.error("Activity.request failed: \(error)")
-        }
+        requestActivity(state: .transcribing())
     }
 
     /// 즉시 종료 (취소/에러). 어떤 phase에서든 호출 가능.
@@ -155,6 +127,23 @@ final class LiveActivityManager: ObservableObject {
 
         phase = .idle
         recordingStartDate = nil
+    }
+
+    // MARK: - Private Helpers
+
+    /// Activity.request 공통 패턴
+    private func requestActivity(state: WritActivityAttributes.ContentState) {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        do {
+            let activity = try Activity.request(
+                attributes: WritActivityAttributes(),
+                content: .init(state: state, staleDate: nil)
+            )
+            currentActivity = activity
+            logger.debug("Activity started: \(activity.id)")
+        } catch {
+            logger.error("Activity.request failed: \(error)")
+        }
     }
 
     // MARK: - Orphaned Activity 정리

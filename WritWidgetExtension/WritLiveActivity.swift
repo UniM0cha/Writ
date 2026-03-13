@@ -25,9 +25,6 @@ struct WritLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.trailing) {
                     expandedTrailing(context: context)
                 }
-                DynamicIslandExpandedRegion(.bottom) {
-                    EmptyView()
-                }
             } compactLeading: {
                 compactLeadingContent(context: context)
             } compactTrailing: {
@@ -44,10 +41,16 @@ struct WritLiveActivity: Widget {
     private func expandedLeading(context: ActivityViewContext<WritActivityAttributes>) -> some View {
         switch context.state.phase {
         case .recording:
-            Image(systemName: "mic.fill")
-                .font(.system(size: 14))
-                .foregroundStyle(Color.writRecordingRed)
-                .frame(maxHeight: .infinity, alignment: .center)
+            HStack(spacing: 6) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.writRecordingRed)
+                Text(context.state.recordingStartDate, style: .timer)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .monospacedDigit()
+            }
+            .frame(maxHeight: .infinity, alignment: .center)
         case .transcribing:
             EmptyView()
         case .completed:
@@ -59,11 +62,7 @@ struct WritLiveActivity: Widget {
     private func expandedCenter(context: ActivityViewContext<WritActivityAttributes>) -> some View {
         switch context.state.phase {
         case .recording:
-            Text(context.state.recordingStartDate, style: .timer)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(.white)
-                .monospacedDigit()
-                .frame(maxHeight: .infinity, alignment: .center)
+            EmptyView()
         case .transcribing:
             VStack(spacing: 4) {
                 Text("전사 중...")

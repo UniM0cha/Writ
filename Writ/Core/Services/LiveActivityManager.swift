@@ -25,6 +25,7 @@ final class LiveActivityManager: ObservableObject {
 
     private var currentActivity: Activity<WritActivityAttributes>?
     private var recordingStartDate: Date?
+    private var lastProgressUpdate: Date = .distantPast
 
     // MARK: - State Transitions
 
@@ -66,6 +67,7 @@ final class LiveActivityManager: ObservableObject {
         }
 
         phase = .transcribing
+        lastProgressUpdate = .distantPast
 
         guard let activity = currentActivity else { return }
         let state = WritActivityAttributes.ContentState.transcribing()
@@ -74,16 +76,20 @@ final class LiveActivityManager: ObservableObject {
         }
     }
 
-    /// 전사 진행률 업데이트
+    /// 전사 진행률 업데이트 (1초 throttling — 빈번한 Activity update 방지)
     func updateProgress(_ progress: Float) {
         guard phase == .transcribing, let activity = currentActivity else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastProgressUpdate) >= 1.0 || progress >= 0.99 else { return }
+        lastProgressUpdate = now
         let state = WritActivityAttributes.ContentState.transcribing(progress: progress)
         Task {
             await activity.update(.init(state: state, staleDate: nil))
         }
     }
 
-    /// 전사 → 완료 전환. 2초 후 자동 종료.
+    /// 전사 → 완료 전환. DI에서 2초간 완료 상태를 보여준 후 종료.
+    /// dismissalPolicy는 잠금 화면에만 영향 — DI는 end() 시 즉시 사라지므로 sleep으로 지연.
     func transitionToCompleted() {
         guard phase == .transcribing else {
             logger.warning("transitionToCompleted ignored: phase=\(self.phase.rawValue)")
@@ -101,9 +107,10 @@ final class LiveActivityManager: ObservableObject {
         let state = WritActivityAttributes.ContentState.completed()
         Task {
             await activity.update(.init(state: state, staleDate: nil))
+            try? await Task.sleep(for: .seconds(2))
             await activity.end(
                 .init(state: state, staleDate: nil),
-                dismissalPolicy: .after(Date().addingTimeInterval(2))
+                dismissalPolicy: .default
             )
             self.phase = .idle
         }

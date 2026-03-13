@@ -21,7 +21,7 @@ struct WritLiveActivity: Widget {
             DynamicIsland {
                 // Expanded
                 DynamicIslandExpandedRegion(.leading) {
-                    phaseIndicator(phase: context.state.phase)
+                    expandedLeading(context: context)
                 }
                 DynamicIslandExpandedRegion(.center) {
                     expandedCenter(context: context)
@@ -30,7 +30,7 @@ struct WritLiveActivity: Widget {
                     expandedTrailing(context: context)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    EmptyView()
+                    expandedBottom(context: context)
                 }
             } compactLeading: {
                 compactLeadingContent(context: context)
@@ -45,20 +45,17 @@ struct WritLiveActivity: Widget {
     // MARK: - Dynamic Island Expanded
 
     @ViewBuilder
-    private func phaseIndicator(phase: ActivityPhase) -> some View {
-        switch phase {
+    private func expandedLeading(context: ActivityViewContext<WritActivityAttributes>) -> some View {
+        switch context.state.phase {
         case .recording:
-            Circle()
-                .fill(Color.writRecordingRed)
-                .frame(width: 10, height: 10)
-        case .transcribing:
-            Circle()
-                .fill(.blue)
-                .frame(width: 10, height: 10)
-        case .completed:
-            Image(systemName: "checkmark.circle.fill")
+            Image(systemName: "mic.fill")
                 .font(.system(size: 14))
-                .foregroundStyle(.green)
+                .foregroundStyle(Color.writRecordingRed)
+                .frame(maxHeight: .infinity, alignment: .center)
+        case .transcribing:
+            EmptyView()
+        case .completed:
+            EmptyView()
         }
     }
 
@@ -70,6 +67,7 @@ struct WritLiveActivity: Widget {
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(.white)
                 .monospacedDigit()
+                .frame(maxHeight: .infinity, alignment: .center)
         case .transcribing:
             VStack(spacing: 4) {
                 Text("전사 중...")
@@ -78,10 +76,12 @@ struct WritLiveActivity: Widget {
                 ProgressView(value: Double(context.state.transcriptionProgress))
                     .tint(.blue)
             }
+            .frame(maxHeight: .infinity, alignment: .center)
         case .completed:
-            Text("클립보드에 복사됨")
+            Text("전사 완료")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.white)
+                .frame(maxHeight: .infinity, alignment: .center)
         }
     }
 
@@ -100,16 +100,25 @@ struct WritLiveActivity: Widget {
                 }
             }
             .buttonStyle(.plain)
+            .frame(maxHeight: .infinity, alignment: .center)
         case .transcribing:
-            ProgressView()
-                .tint(.blue)
-                .frame(width: 32, height: 32)
+            Text("\(Int(context.state.transcriptionProgress * 100))%")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.blue)
+                .monospacedDigit()
+                .frame(maxHeight: .infinity, alignment: .center)
         case .completed:
-            Image(systemName: "doc.on.clipboard.fill")
+            Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 16))
                 .foregroundStyle(.green)
                 .frame(width: 32, height: 32)
+                .frame(maxHeight: .infinity, alignment: .center)
         }
+    }
+
+    @ViewBuilder
+    private func expandedBottom(context: ActivityViewContext<WritActivityAttributes>) -> some View {
+        EmptyView()
     }
 
     // MARK: - Compact
@@ -118,15 +127,9 @@ struct WritLiveActivity: Widget {
     private func compactLeadingContent(context: ActivityViewContext<WritActivityAttributes>) -> some View {
         switch context.state.phase {
         case .recording:
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(Color.writRecordingRed)
-                    .frame(width: 8, height: 8)
-                Text(context.state.recordingStartDate, style: .timer)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .monospacedDigit()
-            }
+            Circle()
+                .fill(Color.writRecordingRed)
+                .frame(width: 8, height: 8)
         case .transcribing:
             HStack(spacing: 6) {
                 Circle()
@@ -141,7 +144,7 @@ struct WritLiveActivity: Widget {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 12))
                     .foregroundStyle(.green)
-                Text("복사됨")
+                Text("완료")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
             }
@@ -152,23 +155,22 @@ struct WritLiveActivity: Widget {
     private func compactTrailingContent(context: ActivityViewContext<WritActivityAttributes>) -> some View {
         switch context.state.phase {
         case .recording:
-            PowerWaveformView(
-                barCount: 3,
-                barWidth: 2,
-                barSpacing: 1.5,
-                frameHeight: 14,
-                barColor: Color.writRecordingRed,
-                power: CGFloat(context.state.averagePower)
-            )
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                Text(context.state.recordingStartDate, style: .timer)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(width: 52)
         case .transcribing:
             Text("\(Int(context.state.transcriptionProgress * 100))%")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.blue)
                 .monospacedDigit()
         case .completed:
-            Image(systemName: "doc.on.clipboard")
-                .font(.system(size: 12))
-                .foregroundStyle(.green)
+            EmptyView()
         }
     }
 
@@ -190,33 +192,6 @@ struct WritLiveActivity: Widget {
                 .font(.system(size: 10))
                 .foregroundStyle(.green)
         }
-    }
-}
-
-// MARK: - Power-driven Waveform (음성 파워 반응)
-
-private struct PowerWaveformView: View {
-    let barCount: Int
-    let barWidth: CGFloat
-    let barSpacing: CGFloat
-    let frameHeight: CGFloat
-    let barColor: Color
-    let power: CGFloat // 0~1
-
-    var body: some View {
-        HStack(spacing: barSpacing) {
-            ForEach(0..<barCount, id: \.self) { index in
-                let centerDistance = abs(CGFloat(index) - CGFloat(barCount - 1) / 2) / (CGFloat(barCount) / 2)
-                let baseHeight: CGFloat = 0.15
-                let variation = (1.0 - centerDistance * 0.5) * max(baseHeight, power)
-                let barHeight = max(3, variation * frameHeight)
-                RoundedRectangle(cornerRadius: barWidth / 2)
-                    .fill(barColor)
-                    .frame(width: barWidth, height: barHeight)
-            }
-        }
-        .frame(height: frameHeight)
-        .animation(.easeInOut(duration: 0.15), value: power)
     }
 }
 
@@ -275,7 +250,7 @@ private struct LockScreenLiveActivityView: View {
         switch context.state.phase {
         case .recording: "녹음 중"
         case .transcribing: "전사 중..."
-        case .completed: "클립보드에 복사됨"
+        case .completed: "전사 완료"
         }
     }
 
@@ -303,34 +278,23 @@ private struct LockScreenLiveActivityView: View {
     private var trailingContent: some View {
         switch context.state.phase {
         case .recording:
-            HStack(spacing: 12) {
-                PowerWaveformView(
-                    barCount: 7,
-                    barWidth: 2,
-                    barSpacing: 1.5,
-                    frameHeight: 16,
-                    barColor: .white.opacity(0.6),
-                    power: CGFloat(context.state.averagePower)
-                )
-
-                Button(intent: StopRecordingIntent()) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.writRecordingRed)
-                            .frame(width: 32, height: 32)
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(.white)
-                            .frame(width: 10, height: 10)
-                    }
+            Button(intent: StopRecordingIntent()) {
+                ZStack {
+                    Circle()
+                        .fill(Color.writRecordingRed)
+                        .frame(width: 32, height: 32)
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(.white)
+                        .frame(width: 10, height: 10)
                 }
-                .buttonStyle(.plain)
             }
+            .buttonStyle(.plain)
         case .transcribing:
             ProgressView(value: Double(context.state.transcriptionProgress))
                 .tint(.blue)
                 .frame(width: 60)
         case .completed:
-            Image(systemName: "doc.on.clipboard.fill")
+            Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 20))
                 .foregroundStyle(.green)
         }

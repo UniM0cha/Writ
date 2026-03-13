@@ -2,7 +2,7 @@ name: Writ
 options:
   bundleIdPrefix: com.solstice
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "26.0"
     macOS: "14.0"
     watchOS: "10.0"
   xcodeVersion: "26.3"
@@ -60,6 +60,7 @@ targets:
         ENABLE_PREVIEWS: YES
         REGISTER_APP_GROUPS: YES
         INFOPLIST_KEY_NSSupportsLiveActivities: YES
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers: [com.solstice.writ.transcribe]
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         STRING_CATALOG_GENERATE_SYMBOLS: YES

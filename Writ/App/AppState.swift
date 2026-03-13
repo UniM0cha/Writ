@@ -3,7 +3,7 @@ import SwiftData
 import Combine
 import UserNotifications
 #if os(iOS)
-import ActivityKit
+import BackgroundTasks
 #endif
 
 /// 앱 전역 상태
@@ -25,9 +25,19 @@ final class AppState: ObservableObject {
     #endif
 
     #if os(iOS)
-    var currentActivity: Activity<WritActivityAttributes>?
-    private var liveActivityTimer: Timer?
-    private var recordingStartDate: Date?
+    let liveActivityManager = LiveActivityManager()
+
+    /// BGContinuedProcessingTask에 전달할 대기 전사 정보
+    private struct PendingBGTranscription {
+        let recordingID: PersistentIdentifier
+        let audioFileName: String
+        let language: String?
+        let autoCopy: Bool
+    }
+    private var pendingBGTranscription: PendingBGTranscription?
+
+    /// 현재 활성 BGContinuedProcessingTask (전사 진행률 연동용)
+    private var activeBGTask: BGContinuedProcessingTask?
     #endif
 
     private var cancellables = Set<AnyCancellable>()
@@ -36,6 +46,8 @@ final class AppState: ObservableObject {
     private var activeTranscriptionIDs = Set<PersistentIdentifier>()
     /// 진행률 저장 throttle용 (0.5초 간격)
     private var lastProgressSaveDate = Date.distantPast
+    /// resumePendingTranscriptions throttle용
+    private var lastResumeDate = Date.distantPast
 
     private init() {
         let engine = WhisperKitEngine()
@@ -71,11 +83,38 @@ final class AppState: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+
+        #if os(iOS)
+        liveActivityManager.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+        #endif
     }
 
     func setup() async {
         // 기존 Documents → App Group 마이그레이션
         AppGroupConstants.migrateFromDocumentsIfNeeded()
+
+        // Orphaned Live Activity 정리
+        #if os(iOS)
+        await liveActivityManager.cleanupOrphanedActivities()
+
+        // BGContinuedProcessingTask handler 등록 (한 번만)
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: "com.solstice.writ.transcribe",
+            using: nil
+        ) { task in
+            guard let bgTask = task as? BGContinuedProcessingTask else {
+                task.setTaskCompleted(success: false)
+                return
+            }
+            Task { @MainActor in
+                await AppState.shared.performBGTranscription(bgTask: bgTask)
+            }
+        }
+        #endif
 
         await modelManager.loadDefaultModelIfNeeded()
 
@@ -124,112 +163,16 @@ final class AppState: ObservableObject {
         _ = try await recorderService.startRecording()
         selectedTab = .record
         #if os(iOS)
-        startLiveActivity()
+        liveActivityManager.startRecording(startDate: Date())
         #endif
     }
-
-    // MARK: - Live Activity 관리
-
-    #if os(iOS)
-    private func stopLiveActivityTimer() {
-        liveActivityTimer?.invalidate()
-        liveActivityTimer = nil
-    }
-
-    func startLiveActivity() {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-
-        // 기존 타이머 정리 (빠른 반복 호출 방어)
-        stopLiveActivityTimer()
-
-        let startDate = Date()
-        recordingStartDate = startDate
-        let attributes = WritActivityAttributes()
-        let state = WritActivityAttributes.ContentState.recording(duration: 0, startDate: startDate, power: 0)
-
-        do {
-            let activity = try Activity.request(
-                attributes: attributes,
-                content: .init(state: state, staleDate: nil)
-            )
-            currentActivity = activity
-
-            // 0.3초마다 averagePower push
-            liveActivityTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.pushLiveActivityPower()
-                }
-            }
-        } catch {
-            // Live Activity 시작 실패 — 무시
-        }
-    }
-
-    private func pushLiveActivityPower() {
-        guard let activity = currentActivity, let startDate = recordingStartDate else { return }
-        let state = WritActivityAttributes.ContentState.recording(
-            duration: recorderService.currentTime,
-            startDate: startDate,
-            power: recorderService.averagePower
-        )
-        Task {
-            await activity.update(.init(state: state, staleDate: nil))
-        }
-    }
-
-    func updateLiveActivityToTranscribing() {
-        stopLiveActivityTimer()
-
-        guard let activity = currentActivity else { return }
-        let state = WritActivityAttributes.ContentState.transcribing()
-        Task {
-            await activity.update(.init(state: state, staleDate: nil))
-        }
-    }
-
-    func updateLiveActivityProgress(_ progress: Float) {
-        guard let activity = currentActivity else { return }
-        let state = WritActivityAttributes.ContentState.transcribing(progress: progress)
-        Task {
-            await activity.update(.init(state: state, staleDate: nil))
-        }
-    }
-
-    func updateLiveActivityToCompleted() {
-        stopLiveActivityTimer()
-        guard let activity = currentActivity else { return }
-        let state = WritActivityAttributes.ContentState.completed()
-        Task {
-            await activity.update(.init(state: state, staleDate: nil))
-            await activity.end(
-                .init(state: state, staleDate: nil),
-                dismissalPolicy: .after(Date().addingTimeInterval(2))
-            )
-        }
-        currentActivity = nil
-    }
-
-    func endLiveActivity() {
-        stopLiveActivityTimer()
-
-        guard let activity = currentActivity else { return }
-        let state = WritActivityAttributes.ContentState.recording(duration: 0, startDate: Date(), power: 0)
-        Task {
-            await activity.end(
-                .init(state: state, staleDate: nil),
-                dismissalPolicy: .immediate
-            )
-        }
-        currentActivity = nil
-    }
-    #endif
 
     // MARK: - 녹음 중지 + 전사 (Intent 및 RecordingView에서 호출)
 
     func stopRecordingAndTranscribe() {
         guard let (fileName, duration) = recorderService.stopRecording() else {
             #if os(iOS)
-            endLiveActivity()
+            liveActivityManager.end()
             #endif
             return
         }
@@ -267,21 +210,91 @@ final class AppState: ObservableObject {
 
         let recordingID = recording.persistentModelID
 
-        // Live Activity를 전사 상태로 전환
         #if os(iOS)
-        updateLiveActivityToTranscribing()
-        #endif
+        // Live Activity를 전사 상태로 전환
+        liveActivityManager.transitionToTranscribing()
 
-        // 백그라운드 전사 시작
+        // BGContinuedProcessingTask 등록 및 제출
+        pendingBGTranscription = PendingBGTranscription(
+            recordingID: recordingID,
+            audioFileName: fileName,
+            language: language,
+            autoCopy: autoCopy
+        )
+
+        let request = BGContinuedProcessingTaskRequest(
+            identifier: "com.solstice.writ.transcribe",
+            title: "전사 중",
+            subtitle: "음성을 텍스트로 변환하고 있습니다"
+        )
+        request.strategy = .fail
+
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            // BGTask 제출 실패 시 fallback: 직접 전사 실행
+            Task {
+                await self.transcribeInBackground(
+                    recordingID: recordingID,
+                    audioFileName: fileName,
+                    language: language,
+                    autoCopy: autoCopy
+                )
+            }
+        }
+        #else
+        // macOS: 백그라운드 제한 없음, 직접 실행
         Task {
-            await transcribeInBackground(
+            await self.transcribeInBackground(
                 recordingID: recordingID,
                 audioFileName: fileName,
                 language: language,
                 autoCopy: autoCopy
             )
         }
+        #endif
     }
+
+    // MARK: - BGContinuedProcessingTask Handler
+
+    #if os(iOS)
+    private func performBGTranscription(bgTask: BGContinuedProcessingTask) async {
+        guard let pending = pendingBGTranscription else {
+            bgTask.setTaskCompleted(success: false)
+            return
+        }
+        pendingBGTranscription = nil
+        activeBGTask = bgTask
+
+        // expiration handler 설정
+        let container = modelContainer
+        let recordingID = pending.recordingID
+        bgTask.expirationHandler = { @Sendable [weak bgTask] in
+            let expiredContext = ModelContext(container)
+            if let rec = expiredContext.model(for: recordingID) as? Recording,
+               rec.transcription?.status == .inProgress {
+                rec.transcription?.status = .pending
+                try? expiredContext.save()
+            }
+            bgTask?.setTaskCompleted(success: false)
+        }
+        bgTask.progress.totalUnitCount = 100
+        bgTask.progress.completedUnitCount = 0
+
+        await transcribeInBackground(
+            recordingID: pending.recordingID,
+            audioFileName: pending.audioFileName,
+            language: pending.language,
+            autoCopy: pending.autoCopy
+        )
+
+        // transcribeInBackground 내부에서 setTaskCompleted가 호출되지 않는 경로 보장 (duplicate guard 등)
+        if activeBGTask != nil {
+            bgTask.setTaskCompleted(success: false)
+        }
+        activeBGTask = nil
+    }
+    #endif
 
     // MARK: - 백그라운드 전사
 
@@ -297,30 +310,11 @@ final class AppState: ObservableObject {
         defer { activeTranscriptionIDs.remove(recordingID) }
 
         #if os(iOS)
-        // Live Activity 정리 보장 (성공 시 updateLiveActivityToCompleted이 currentActivity = nil 설정)
+        // Live Activity 정리 보장 (completed는 transitionToCompleted()가 자체 종료 처리)
         defer {
-            if currentActivity != nil {
-                endLiveActivity()
-            }
-        }
-
-        // 백그라운드 태스크 요청
-        var bgTaskID: UIBackgroundTaskIdentifier = .invalid
-        let container = modelContainer
-        bgTaskID = UIApplication.shared.beginBackgroundTask {
-            // 만료 시: 동기적으로 상태 저장 후 종료
-            let expiredContext = ModelContext(container)
-            if let rec = expiredContext.model(for: recordingID) as? Recording,
-               rec.transcription?.status == .inProgress {
-                rec.transcription?.status = .pending
-                try? expiredContext.save()
-            }
-            UIApplication.shared.endBackgroundTask(bgTaskID)
-            bgTaskID = .invalid
-        }
-        defer {
-            if bgTaskID != .invalid {
-                UIApplication.shared.endBackgroundTask(bgTaskID)
+            let p = liveActivityManager.phase
+            if p != .idle && p != .completed {
+                liveActivityManager.end()
             }
         }
         #endif
@@ -339,6 +333,10 @@ final class AppState: ObservableObject {
                 recording.transcription?.status = .failed
                 try? backgroundContext.save()
             }
+            #if os(iOS)
+            activeBGTask?.setTaskCompleted(success: false)
+            activeBGTask = nil
+            #endif
             return
         }
 
@@ -347,6 +345,10 @@ final class AppState: ObservableObject {
             recording.transcription?.status = .inProgress
             try? backgroundContext.save()
         } else {
+            #if os(iOS)
+            activeBGTask?.setTaskCompleted(success: false)
+            activeBGTask = nil
+            #endif
             return
         }
 
@@ -358,7 +360,8 @@ final class AppState: ObservableObject {
                     Task { @MainActor in
                         let appState = AppState.shared
                         #if os(iOS)
-                        appState.updateLiveActivityProgress(progress)
+                        appState.liveActivityManager.updateProgress(progress)
+                        appState.activeBGTask?.progress.completedUnitCount = Int64(progress * 100)
                         #endif
                         // SwiftData에 진행률 저장 (throttled)
                         let now = Date()
@@ -395,9 +398,11 @@ final class AppState: ObservableObject {
                     ClipboardService.copy(output.text)
                 }
 
-                // Live Activity → 완료 상태 (currentActivity = nil 설정 → defer에서 중복 호출 방지)
+                // Live Activity → 완료 상태
                 #if os(iOS)
-                updateLiveActivityToCompleted()
+                liveActivityManager.transitionToCompleted()
+                activeBGTask?.setTaskCompleted(success: true)
+                activeBGTask = nil
                 #endif
 
                 await sendCompletionNotification(
@@ -410,7 +415,10 @@ final class AppState: ObservableObject {
                 recording.transcription?.status = .failed
                 try? backgroundContext.save()
             }
-            // defer에서 endLiveActivity 처리
+            #if os(iOS)
+            activeBGTask?.setTaskCompleted(success: false)
+            activeBGTask = nil
+            #endif
         }
     }
 
@@ -456,7 +464,12 @@ final class AppState: ObservableObject {
 
     // MARK: - 중단된 전사 복구
 
-    private func resumePendingTranscriptions() {
+    func resumePendingTranscriptions() {
+        // scenePhase 변경마다 호출되므로 5초 throttle
+        let now = Date()
+        guard now.timeIntervalSince(lastResumeDate) >= 5 else { return }
+        lastResumeDate = now
+
         let context = ModelContext(modelContainer)
         let descriptor = FetchDescriptor<Recording>()
 

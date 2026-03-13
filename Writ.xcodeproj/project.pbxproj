@@ -40,6 +40,7 @@
 		6E3EB1A136A88F004D3FF630 /* LiveActivityIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07046DFBB8A14E400951CBE /* LiveActivityIntents.swift */; };
 		6F25F5C3795013A08B3586B1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DCA51AFD3CBD16E48252810 /* ContentView.swift */; };
 		7CD9281F8D44A7005B3380CB /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 180241A02C06271F5B7433CC /* WhisperKit */; };
+		7D055A8242F3FDD2027F7510 /* LiveActivityManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E75552524630DFE1F2024A2F /* LiveActivityManagerTests.swift */; };
 		7FFD2052A885DEBD54FC4C39 /* SourceDeviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CD162602B4A663C5E7D3404 /* SourceDeviceTests.swift */; };
 		82A8E97A0BA2E9AD76207785 /* DeviceCapability.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECA32BE5DDC52BB14DC3DFC0 /* DeviceCapability.swift */; };
 		87B494ED6298AF0DABAE7298 /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E3C9DC3AC7383FE5D19E255 /* WatchSessionManager.swift */; };
@@ -75,6 +76,7 @@
 		F02206ABC206402099B3293C /* Recording.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF0D0DDFF0A4581A6967A1F /* Recording.swift */; };
 		F3E19B6E3E727BD0C111031A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CE101945BBB664C4C6164399 /* Assets.xcassets */; };
 		F6015EB1E100DC05F5D11BE8 /* ModelManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66FF74AFE733E41A16DFD33C /* ModelManagerTests.swift */; };
+		FCF8568FA900EBCFC3899DE8 /* LiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8CA2D76148079B53FBBDC2F /* LiveActivityManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -163,6 +165,7 @@
 		BF1FFB4F5F118A1EC77A0DF1 /* AudioWaveformExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioWaveformExtractor.swift; sourceTree = "<group>"; };
 		C11853B3ED386EAF5F03EF3F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		C4B706BF64DA9DDC1D9C8F42 /* WritIntentsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WritIntentsTests.swift; sourceTree = "<group>"; };
+		C8CA2D76148079B53FBBDC2F /* LiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityManager.swift; sourceTree = "<group>"; };
 		C9C315DF1AD1D6D854A8E501 /* AudioRecorderService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecorderService.swift; sourceTree = "<group>"; };
 		CE101945BBB664C4C6164399 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D417D9D23327F7E36C3ED857 /* AppGroupConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroupConstants.swift; sourceTree = "<group>"; };
@@ -170,6 +173,7 @@
 		E1143FEDEE5D712D2C504EB5 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		E5ACC88A4146652A9EC569D1 /* ModelLoadPhaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelLoadPhaseTests.swift; sourceTree = "<group>"; };
 		E702BBA7486F940071C56001 /* WritWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WritWatchApp.swift; sourceTree = "<group>"; };
+		E75552524630DFE1F2024A2F /* LiveActivityManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityManagerTests.swift; sourceTree = "<group>"; };
 		EA4AA7A7B679D0D0A2603C2F /* WritWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WritWidgetExtension.entitlements; sourceTree = "<group>"; };
 		EB2CFAF84DB2F8274AC9E66F /* Writ.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Writ.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EBF0D0DDFF0A4581A6967A1F /* Recording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recording.swift; sourceTree = "<group>"; };
@@ -223,6 +227,7 @@
 			children = (
 				C9C315DF1AD1D6D854A8E501 /* AudioRecorderService.swift */,
 				B50B7720637B6332A18BD03A /* ClipboardService.swift */,
+				C8CA2D76148079B53FBBDC2F /* LiveActivityManager.swift */,
 				61EC12A8389A953C44506600 /* ModelManager.swift */,
 				589C5ABDA1DDF04661ABE10D /* PhoneWatchSessionManager.swift */,
 				EF8FC0BDB8F6062EDCC9ADEF /* WhisperKitEngine.swift */,
@@ -324,6 +329,7 @@
 				12F4CE3CE4E93A43EB243BD4 /* DeepLinkTests.swift */,
 				3E5D651C89F9A4D6F79DD732 /* DeviceCapabilityTests.swift */,
 				9B65B0DDF9D358D3358BA1A2 /* FormattingHelpersTests.swift */,
+				E75552524630DFE1F2024A2F /* LiveActivityManagerTests.swift */,
 				E5ACC88A4146652A9EC569D1 /* ModelLoadPhaseTests.swift */,
 				DDC6B936044047053FC6D0B2 /* ModelManagerCancelTests.swift */,
 				66FF74AFE733E41A16DFD33C /* ModelManagerTests.swift */,
@@ -581,6 +587,7 @@
 				A1CE9D9507A59539314DC612 /* DeepLinkTests.swift in Sources */,
 				485B8995B2CA480CCB06948B /* DeviceCapabilityTests.swift in Sources */,
 				3907A8B61DBF222BABDC8A72 /* FormattingHelpersTests.swift in Sources */,
+				7D055A8242F3FDD2027F7510 /* LiveActivityManagerTests.swift in Sources */,
 				8F5765E117622CA87B4CFEE5 /* MockTranscriptionEngine.swift in Sources */,
 				398E5C5D8493D49ADA4E6D6A /* ModelLoadPhaseTests.swift in Sources */,
 				C892ED3A4ECC99DCE8D01977 /* ModelManagerCancelTests.swift in Sources */,
@@ -627,6 +634,7 @@
 				3DCC3B9543641749E76CF0D6 /* HistoryRowView.swift in Sources */,
 				12E226BD68D291AB86E4BF88 /* HistoryView.swift in Sources */,
 				6E3EB1A136A88F004D3FF630 /* LiveActivityIntents.swift in Sources */,
+				FCF8568FA900EBCFC3899DE8 /* LiveActivityManager.swift in Sources */,
 				6E295C880ACA1039BE357AE9 /* MacDetailView.swift in Sources */,
 				E49E872E7C85542574CCB69B /* MacMainView.swift in Sources */,
 				C1E52110156CFC6279F59AE2 /* MacSidebarRowView.swift in Sources */,
@@ -712,6 +720,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Writ/Info.plist;
+				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = (
+					com.solstice.writ.transcribe,
+				);
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "음성을 텍스트로 변환하기 위해 마이크 접근이 필요합니다.";
 				"INFOPLIST_KEY_NSMicrophoneUsageDescription[sdk=macosx*]" = "음성을 텍스트로 변환하기 위해 마이크 접근이 필요합니다.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
@@ -791,7 +802,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -875,7 +886,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -936,6 +947,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Writ/Info.plist;
+				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = (
+					com.solstice.writ.transcribe,
+				);
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "음성을 텍스트로 변환하기 위해 마이크 접근이 필요합니다.";
 				"INFOPLIST_KEY_NSMicrophoneUsageDescription[sdk=macosx*]" = "음성을 텍스트로 변환하기 위해 마이크 접근이 필요합니다.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;

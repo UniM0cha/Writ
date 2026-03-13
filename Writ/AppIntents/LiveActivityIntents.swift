@@ -16,7 +16,7 @@ struct StopRecordingIntent: LiveActivityIntent {
             appState.stopRecordingAndTranscribe()
         } else {
             // 앱이 종료된 상태에서 Live Activity가 남아있는 경우 정리
-            appState.endLiveActivity()
+            appState.liveActivityManager.end()
         }
         #endif
         return .result(dialog: "녹음을 중지합니다")

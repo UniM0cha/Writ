@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @AppStorage("autoCopyEnabled") private var autoCopyEnabled = false
+    @AppStorage("diarizationEnabled") private var diarizationEnabled = false
     @AppStorage("iCloudSyncEnabled") private var iCloudSyncEnabled = true
     @AppStorage("selectedLanguage") private var selectedLanguage = "auto"
     @AppStorage("autoDeleteDays") private var autoDeleteDays = 0
@@ -14,6 +15,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                engineSection
                 modelSection
                 languageSection
                 convenienceSection
@@ -24,22 +26,38 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Engine Section
+
+    private var engineSection: some View {
+        Section("음성 인식 엔진") {
+            Picker("엔진", selection: Binding(
+                get: { appState.modelManager.selectedEngine },
+                set: { appState.modelManager.selectedEngine = $0 }
+            )) {
+                ForEach(EngineType.availableCases) { engine in
+                    Text(engine.displayName).tag(engine)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+    }
+
     // MARK: - Model Section
 
     private var modelSection: some View {
         Section {
-            ForEach(appState.modelManager.models) { model in
+            ForEach(appState.modelManager.currentEngineModels) { model in
                 ModelRowView(
                     model: model,
-                    isActive: model.variant == appState.modelManager.activeModel,
+                    isActive: model.identifier == appState.modelManager.activeModel,
                     onSelect: {
-                        Task { try? await appState.modelManager.loadModel(model.variant) }
+                        Task { try? await appState.modelManager.loadModel(model.identifier) }
                     },
                     onDelete: {
-                        Task { await appState.modelManager.deleteModel(model.variant) }
+                        Task { await appState.modelManager.deleteModel(model.identifier) }
                     },
                     onCancel: {
-                        appState.modelManager.cancelDownload(model.variant)
+                        appState.modelManager.cancelDownload(model.identifier)
                     }
                 )
             }
@@ -68,8 +86,17 @@ struct SettingsView: View {
     // MARK: - Convenience Section
 
     private var convenienceSection: some View {
-        Section("편의 기능") {
+        Section {
             Toggle("전사 완료 시 자동 복사", isOn: $autoCopyEnabled)
+            #if os(iOS)
+            Toggle("발화자 구분", isOn: $diarizationEnabled)
+            #endif
+        } header: {
+            Text("편의 기능")
+        } footer: {
+            #if os(iOS)
+            Text("발화자 구분을 켜면 전사 시 화자를 자동으로 구분합니다. 처리 시간이 늘어날 수 있습니다.")
+            #endif
         }
     }
 
@@ -98,7 +125,7 @@ struct SettingsView: View {
 // MARK: - Model Row
 
 struct ModelRowView: View {
-    let model: WhisperModelInfo
+    let model: ModelInfo
     let isActive: Bool
     let onSelect: () -> Void
     let onDelete: () -> Void
@@ -123,7 +150,7 @@ struct ModelRowView: View {
 
                 VStack(alignment: .leading, spacing: WritSpacing.xxxs) {
                     HStack(spacing: WritSpacing.xxs) {
-                        Text(model.variant.displayName)
+                        Text(model.identifier.displayName)
                             .font(WritFont.body)
                             .foregroundStyle(model.isSupported ? WritColor.primaryText : WritColor.secondaryText)
 
@@ -137,7 +164,7 @@ struct ModelRowView: View {
                         }
                     }
 
-                    Text("\(model.variant.diskSizeMB) MB")
+                    Text("\(model.identifier.diskSizeMB) MB")
                         .font(WritFont.caption)
                         .foregroundStyle(WritColor.secondaryText)
 
@@ -173,13 +200,13 @@ struct ModelRowView: View {
             }
         }
         .confirmationDialog(
-            "\(model.variant.displayName) 모델을 삭제하시겠습니까?",
+            "\(model.identifier.displayName) 모델을 삭제하시겠습니까?",
             isPresented: $showDeleteConfirm,
             titleVisibility: .visible
         ) {
             Button("삭제", role: .destructive) { onDelete() }
         } message: {
-            Text("모델 파일(\(model.variant.diskSizeMB) MB)이 삭제됩니다. 다시 사용하려면 재다운로드가 필요합니다.")
+            Text("모델 파일(\(model.identifier.diskSizeMB) MB)이 삭제됩니다. 다시 사용하려면 재다운로드가 필요합니다.")
         }
     }
 

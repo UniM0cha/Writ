@@ -126,6 +126,82 @@ final class SRTExporterTests: XCTestCase {
         XCTAssertEqual(lines[2], "hello")
     }
 
+    // MARK: - Speaker Support
+
+    func testExport_singleSegmentWithSpeaker_includesSpeakerPrefix() {
+        let segments = [
+            SegmentOutput(text: "Hello", startTime: 0.0, endTime: 1.0, speaker: "화자 1")
+        ]
+
+        let result = SRTExporter.export(segments: segments)
+
+        let expected = """
+        1
+        00:00:00,000 --> 00:00:01,000
+        [화자 1] Hello
+        """
+        XCTAssertEqual(result, trimmedLines(expected))
+    }
+
+    func testExport_segmentWithoutSpeaker_noPrefix() {
+        let segments = [
+            SegmentOutput(text: "Hello", startTime: 0.0, endTime: 1.0)
+        ]
+
+        let result = SRTExporter.export(segments: segments)
+
+        XCTAssertFalse(result.contains("["), "Segment without speaker should have no bracket prefix")
+        XCTAssertTrue(result.contains("Hello"))
+    }
+
+    func testExport_mixedSpeakerSegments() {
+        let segments = [
+            SegmentOutput(text: "Hi", startTime: 0.0, endTime: 1.0, speaker: "화자 1"),
+            SegmentOutput(text: "Hello", startTime: 1.0, endTime: 2.0),
+            SegmentOutput(text: "Bye", startTime: 2.0, endTime: 3.0, speaker: "화자 2"),
+        ]
+
+        let result = SRTExporter.export(segments: segments)
+
+        let expected = """
+        1
+        00:00:00,000 --> 00:00:01,000
+        [화자 1] Hi
+
+        2
+        00:00:01,000 --> 00:00:02,000
+        Hello
+
+        3
+        00:00:02,000 --> 00:00:03,000
+        [화자 2] Bye
+        """
+        XCTAssertEqual(result, trimmedLines(expected))
+    }
+
+    func testExport_multipleSpeakerSegments_allWithSpeakers() {
+        let segments = [
+            SegmentOutput(text: "First", startTime: 0.0, endTime: 1.0, speaker: "화자 1"),
+            SegmentOutput(text: "Second", startTime: 1.0, endTime: 2.0, speaker: "화자 2"),
+        ]
+
+        let result = SRTExporter.export(segments: segments)
+
+        XCTAssertTrue(result.contains("[화자 1] First"))
+        XCTAssertTrue(result.contains("[화자 2] Second"))
+    }
+
+    func testExport_speakerWithWhitespaceText_trimmingStillApplied() {
+        let segments = [
+            SegmentOutput(text: "  spaced  ", startTime: 0.0, endTime: 1.0, speaker: "화자 1")
+        ]
+
+        let result = SRTExporter.export(segments: segments)
+
+        XCTAssertTrue(result.contains("[화자 1] spaced"))
+        XCTAssertFalse(result.contains("[화자 1]  spaced"))
+    }
+
     // MARK: - Helpers
 
     /// Strips leading indentation from multiline string literal so we can write readable expectations.

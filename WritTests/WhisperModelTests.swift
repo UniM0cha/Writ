@@ -97,48 +97,46 @@ final class WhisperModelVariantTests: XCTestCase {
     }
 }
 
-// MARK: - WhisperModelInfo Tests
+// MARK: - ModelInfo Tests (WhisperModelInfo → ModelInfo 마이그레이션)
 
-final class WhisperModelInfoTests: XCTestCase {
+final class ModelInfoFromWhisperTests: XCTestCase {
 
     func testInitWithDefaultValues() {
-        let info = WhisperModelInfo(variant: .tiny)
-        XCTAssertEqual(info.variant, .tiny)
+        let info = ModelInfo(identifier: WhisperModelVariant.tiny.modelIdentifier)
+        XCTAssertEqual(info.identifier.whisperVariant, .tiny)
         XCTAssertTrue(info.isSupported)
         XCTAssertNil(info.unsupportedReason)
         if case .notDownloaded = info.state {
-            // expected
         } else {
             XCTFail("Default state should be .notDownloaded, got \(info.state)")
         }
     }
 
     func testInitWithCustomValues() {
-        let info = WhisperModelInfo(
-            variant: .largeV3,
+        let info = ModelInfo(
+            identifier: WhisperModelVariant.largeV3.modelIdentifier,
             state: .downloaded,
             isSupported: false,
             unsupportedReason: "Not enough RAM"
         )
-        XCTAssertEqual(info.variant, .largeV3)
+        XCTAssertEqual(info.identifier.whisperVariant, .largeV3)
         XCTAssertFalse(info.isSupported)
         XCTAssertEqual(info.unsupportedReason, "Not enough RAM")
         if case .downloaded = info.state {
-            // expected
         } else {
             XCTFail("State should be .downloaded, got \(info.state)")
         }
     }
 
-    func testIdReturnsVariantId() {
+    func testIdReturnsIdentifierId() {
         for variant in WhisperModelVariant.allCases {
-            let info = WhisperModelInfo(variant: variant)
-            XCTAssertEqual(info.id, variant.id, "\(variant) info.id should equal variant.id")
+            let info = ModelInfo(identifier: variant.modelIdentifier)
+            XCTAssertEqual(info.id, variant.modelIdentifier.id)
         }
     }
 
     func testStateCanBeUpdated() {
-        var info = WhisperModelInfo(variant: .base)
+        var info = ModelInfo(identifier: WhisperModelVariant.base.modelIdentifier)
         info.state = .downloading(progress: 0.5)
         if case .downloading(let progress) = info.state {
             XCTAssertEqual(progress, 0.5, accuracy: 0.001)
@@ -148,7 +146,6 @@ final class WhisperModelInfoTests: XCTestCase {
 
         info.state = .loaded
         if case .loaded = info.state {
-            // expected
         } else {
             XCTFail("State should be .loaded")
         }

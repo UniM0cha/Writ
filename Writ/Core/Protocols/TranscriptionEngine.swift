@@ -17,15 +17,17 @@ struct SegmentOutput: Sendable {
     let text: String
     let startTime: TimeInterval
     let endTime: TimeInterval
+    let speaker: String?
 
-    init(text: String, startTime: TimeInterval, endTime: TimeInterval) {
+    init(text: String, startTime: TimeInterval, endTime: TimeInterval, speaker: String? = nil) {
         self.text = text
         self.startTime = startTime
         self.endTime = endTime
+        self.speaker = speaker
     }
 }
 
-/// 전사 엔진 추상화. v1: WhisperKit, 향후 다른 엔진으로 교체 가능.
+/// 전사 엔진 추상화. WhisperKit, Qwen3-ASR 등 다양한 엔진 지원.
 protocol TranscriptionEngine: Sendable {
     func transcribe(
         audioURL: URL,
@@ -33,14 +35,14 @@ protocol TranscriptionEngine: Sendable {
         progressCallback: (@Sendable (Float) -> Void)?
     ) async throws -> TranscriptionOutput
 
-    func supportedModels() -> [WhisperModelVariant]
+    func supportedModels() -> [ModelIdentifier]
 
     func loadModel(
-        _ model: WhisperModelVariant,
+        _ model: ModelIdentifier,
         progressCallback: (@Sendable (Float) -> Void)?
     ) async throws
 
     func unloadModel() async
 
-    var currentModel: WhisperModelVariant? { get }
+    var currentModel: ModelIdentifier? { get }
 }

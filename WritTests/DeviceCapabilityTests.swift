@@ -87,4 +87,115 @@ final class DeviceCapabilityTests: XCTestCase {
             )
         }
     }
+
+    // MARK: - supports(ModelIdentifier)
+
+    func testSupportsModelIdentifier_tinyWhisper() {
+        let tinyId = WhisperModelVariant.tiny.modelIdentifier
+        for capability in [DeviceCapability.highEnd, .midRange, .lowEnd] {
+            XCTAssertTrue(capability.supports(tinyId), "\(capability) should support tiny via ModelIdentifier")
+        }
+    }
+
+    func testSupportsModelIdentifier_consistentWithWhisperVariant() {
+        // Both supports() overloads should return the same result for equivalent models
+        for capability in [DeviceCapability.highEnd, .midRange, .lowEnd] {
+            for variant in WhisperModelVariant.allCases {
+                let whisperResult = capability.supports(variant)
+                let identifierResult = capability.supports(variant.modelIdentifier)
+                XCTAssertEqual(
+                    whisperResult, identifierResult,
+                    "\(capability) supports(\(variant)) should match supports(modelIdentifier) result"
+                )
+            }
+        }
+    }
+
+    func testSupportsModelIdentifier_qwenSmallestModel() {
+        // Qwen 0.6B 4-bit requires 2 GB RAM; test machines should support this
+        let qwen = ModelIdentifier.qwen3_0_6B_4bit
+        let capability = DeviceCapability.current
+        // On a test Mac with >=2GB RAM this should be true
+        XCTAssertTrue(capability.supports(qwen), "Current device should support smallest Qwen model")
+    }
+
+    func testSupportsModelIdentifier_returnsValueForAllQwenModels() {
+        for capability in [DeviceCapability.highEnd, .midRange, .lowEnd] {
+            for model in ModelIdentifier.allModels(for: .qwen3ASR) {
+                let result = capability.supports(model)
+                XCTAssertNotNil(result as Bool?, "\(capability) supports(\(model.displayName)) should return a Bool")
+            }
+        }
+    }
+
+    // MARK: - defaultModel(for: EngineType)
+
+    func testDefaultModel_whisperKit_matchesDefaultModel() {
+        let allCapabilities: [DeviceCapability] = [.highEnd, .midRange, .lowEnd]
+        for capability in allCapabilities {
+            let engineDefault = capability.defaultModel(for: .whisperKit)
+            let legacyDefault = capability.defaultModel.modelIdentifier
+            XCTAssertEqual(
+                engineDefault, legacyDefault,
+                "defaultModel(for: .whisperKit) should match legacy defaultModel.modelIdentifier for \(capability)"
+            )
+        }
+    }
+
+    func testDefaultModel_whisperKit_hasWhisperEngine() {
+        let allCapabilities: [DeviceCapability] = [.highEnd, .midRange, .lowEnd]
+        for capability in allCapabilities {
+            let model = capability.defaultModel(for: .whisperKit)
+            XCTAssertEqual(model.engine, .whisperKit)
+        }
+    }
+
+    func testDefaultModel_qwen3ASR_hasQwenEngine() {
+        let allCapabilities: [DeviceCapability] = [.highEnd, .midRange, .lowEnd]
+        for capability in allCapabilities {
+            let model = capability.defaultModel(for: .qwen3ASR)
+            XCTAssertEqual(model.engine, .qwen3ASR)
+        }
+    }
+
+    func testDefaultModel_qwen3ASR_highEnd() {
+        XCTAssertEqual(DeviceCapability.highEnd.defaultModel(for: .qwen3ASR), .qwen3_1_7B_8bit)
+    }
+
+    func testDefaultModel_qwen3ASR_midRange() {
+        XCTAssertEqual(DeviceCapability.midRange.defaultModel(for: .qwen3ASR), .qwen3_0_6B_8bit)
+    }
+
+    func testDefaultModel_qwen3ASR_lowEnd() {
+        XCTAssertEqual(DeviceCapability.lowEnd.defaultModel(for: .qwen3ASR), .qwen3_0_6B_4bit)
+    }
+
+    func testDefaultModel_forAllEngines_isInCatalog() {
+        let allCapabilities: [DeviceCapability] = [.highEnd, .midRange, .lowEnd]
+        for capability in allCapabilities {
+            for engine in EngineType.allCases {
+                let defaultModel = capability.defaultModel(for: engine)
+                let catalog = ModelIdentifier.allModels(for: engine)
+                XCTAssertTrue(
+                    catalog.contains(defaultModel),
+                    "defaultModel(for: \(engine)) should be in the catalog for \(capability)"
+                )
+            }
+        }
+    }
+
+    func testDefaultModel_qwen3ASR_ramScalesWithCapability() {
+        let lowEnd = DeviceCapability.lowEnd.defaultModel(for: .qwen3ASR)
+        let midRange = DeviceCapability.midRange.defaultModel(for: .qwen3ASR)
+        let highEnd = DeviceCapability.highEnd.defaultModel(for: .qwen3ASR)
+
+        XCTAssertLessThanOrEqual(
+            lowEnd.minimumRAMGB, midRange.minimumRAMGB,
+            "Low-end default should not require more RAM than mid-range default"
+        )
+        XCTAssertLessThanOrEqual(
+            midRange.minimumRAMGB, highEnd.minimumRAMGB,
+            "Mid-range default should not require more RAM than high-end default"
+        )
+    }
 }

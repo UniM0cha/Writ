@@ -12,10 +12,23 @@ struct RetranscribeSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // 엔진 선택
+                Picker("엔진", selection: Binding(
+                    get: { appState.modelManager.selectedEngine },
+                    set: { appState.modelManager.selectedEngine = $0 }
+                )) {
+                    ForEach(EngineType.availableCases) { engine in
+                        Text(engine.displayName).tag(engine)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, WritSpacing.md)
+                .padding(.top, WritSpacing.sm)
+
                 // 모델 카드 리스트
                 ScrollView {
                     VStack(spacing: WritSpacing.xs) {
-                        ForEach(appState.modelManager.models) { model in
+                        ForEach(appState.modelManager.currentEngineModels) { model in
                             modelCard(model)
                         }
                     }
@@ -67,22 +80,22 @@ struct RetranscribeSheet: View {
         .presentationDetents([.medium])
     }
 
-    private func modelCard(_ model: WhisperModelInfo) -> some View {
+    private func modelCard(_ model: ModelInfo) -> some View {
         Button {
-            retranscribe(with: model.variant)
+            retranscribe(with: model.identifier)
         } label: {
             HStack(spacing: WritSpacing.sm) {
                 // 상태 점
                 Circle()
-                    .fill(model.variant == appState.modelManager.activeModel
+                    .fill(model.identifier == appState.modelManager.activeModel
                           ? WritColor.success : WritColor.secondaryText.opacity(0.3))
                     .frame(width: WritDimension.modelDotSize, height: WritDimension.modelDotSize)
 
                 VStack(alignment: .leading, spacing: WritSpacing.xxxs) {
-                    Text(model.variant.displayName)
+                    Text(model.identifier.displayName)
                         .font(WritFont.body)
                         .foregroundStyle(model.isSupported ? WritColor.primaryText : WritColor.secondaryText)
-                    Text("\(model.variant.diskSizeMB) MB")
+                    Text("\(model.identifier.diskSizeMB) MB")
                         .font(WritFont.caption)
                         .foregroundStyle(WritColor.secondaryText)
                 }
@@ -93,7 +106,7 @@ struct RetranscribeSheet: View {
                     Text("미지원")
                         .font(WritFont.caption)
                         .foregroundStyle(WritColor.recordingRed)
-                } else if model.variant == appState.modelManager.activeModel {
+                } else if model.identifier == appState.modelManager.activeModel {
                     Text("사용 중")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(WritColor.accent)
@@ -108,13 +121,13 @@ struct RetranscribeSheet: View {
         .disabled(!model.isSupported || isTranscribing)
     }
 
-    private func retranscribe(with variant: WhisperModelVariant) {
+    private func retranscribe(with identifier: ModelIdentifier) {
         isTranscribing = true
         errorMessage = nil
         Task {
             do {
-                if variant != appState.modelManager.activeModel {
-                    try await appState.modelManager.loadModel(variant)
+                if identifier != appState.modelManager.activeModel {
+                    try await appState.modelManager.loadModel(identifier)
                 }
                 let output = try await appState.modelManager.transcribe(
                     audioURL: recording.audioURL,
@@ -131,13 +144,14 @@ struct RetranscribeSheet: View {
                         text: seg.text,
                         startTime: seg.startTime,
                         endTime: seg.endTime,
-                        orderIndex: index
+                        orderIndex: index,
+                        speaker: seg.speaker
                     )
                 }
 
                 let transcription = Transcription(
                     text: output.text,
-                    modelUsed: variant.displayName,
+                    modelUsed: identifier.displayName,
                     status: .completed,
                     segments: segments
                 )

@@ -22,6 +22,9 @@ packages:
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit.git
     from: "0.16.0"
+  Qwen3Speech:
+    url: https://github.com/ivan-digital/qwen3-asr-swift.git
+    from: "0.0.7"
 
 targets:
   # ─── Main App (iOS + macOS) ───
@@ -69,6 +72,15 @@ targets:
         product: WhisperKit
       - package: WhisperKit
         product: TTSKit
+      - package: Qwen3Speech
+        product: Qwen3ASR
+        destinationFilters: [iOS]
+      - package: Qwen3Speech
+        product: SpeechVAD
+        destinationFilters: [iOS]
+      - package: Qwen3Speech
+        product: AudioCommon
+        destinationFilters: [iOS]
       - target: WritWidgetExtension
         embed: true
         codeSign: true

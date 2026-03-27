@@ -16,15 +16,15 @@ final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
     private var _currentModel: WhisperModelVariant?
     private let lock = NSLock()
 
-    var currentModel: WhisperModelVariant? {
-        lock.withLock { _currentModel }
+    var currentModel: ModelIdentifier? {
+        lock.withLock { _currentModel?.modelIdentifier }
     }
 
     init() {}
 
     /// 프로토콜 준수용 (phaseCallback 없이 호출)
     func loadModel(
-        _ model: WhisperModelVariant,
+        _ model: ModelIdentifier,
         progressCallback: (@Sendable (Float) -> Void)?
     ) async throws {
         try await loadModel(model, progressCallback: progressCallback, phaseCallback: nil)
@@ -32,13 +32,17 @@ final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
 
     /// ModelManager 전용: 모델 로드 단계(optimizing/loading) 콜백 포함
     func loadModel(
-        _ model: WhisperModelVariant,
+        _ model: ModelIdentifier,
         progressCallback: (@Sendable (Float) -> Void)?,
         phaseCallback: (@Sendable (ModelLoadPhase) -> Void)?
     ) async throws {
+        guard let variant = model.whisperVariant else {
+            throw WhisperKitEngineError.modelNotLoaded
+        }
+
         // 1. 다운로드 (이미 로컬에 있으면 스킵됨, 없으면 진행률 콜백 호출)
         let modelURL = try await WhisperKit.download(
-            variant: model.rawValue,
+            variant: variant.rawValue,
             from: "argmaxinc/whisperkit-coreml",
             progressCallback: { progress in
                 progressCallback?(Float(progress.fractionCompleted))
@@ -70,7 +74,7 @@ final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
 
         lock.withLock {
             self.whisperKit = kit
-            self._currentModel = model
+            self._currentModel = variant
         }
     }
 
@@ -136,8 +140,10 @@ final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
         )
     }
 
-    func supportedModels() -> [WhisperModelVariant] {
-        WhisperModelVariant.allCases.filter { DeviceCapability.current.supports($0) }
+    func supportedModels() -> [ModelIdentifier] {
+        WhisperModelVariant.allCases
+            .filter { DeviceCapability.current.supports($0) }
+            .map(\.modelIdentifier)
     }
 
     // MARK: - Private

@@ -180,11 +180,18 @@ struct SegmentRowView: View {
                 .foregroundStyle(WritColor.accent)
                 .frame(width: 50, alignment: .trailing)
 
-            Text(segment.text)
-                .font(WritFont.transcript)
-                .lineSpacing(4)
-                .foregroundStyle(WritColor.primaryText)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: WritSpacing.xxxs) {
+                if let speaker = segment.speaker {
+                    Text(speaker)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(WritColor.accent)
+                }
+                Text(segment.text)
+                    .font(WritFont.transcript)
+                    .lineSpacing(4)
+                    .foregroundStyle(WritColor.primaryText)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, WritSpacing.sm)
         .padding(.horizontal, WritSpacing.lg)

@@ -44,8 +44,27 @@ enum DeviceCapability: Sendable {
         }
     }
 
-    /// 모델 지원 여부
+    /// WhisperKit 모델 지원 여부
     func supports(_ model: WhisperModelVariant) -> Bool {
         model.minimumRAMGB * 1024 * 1024 * 1024 <= Int(ProcessInfo.processInfo.physicalMemory)
+    }
+
+    /// 범용 모델 지원 여부 (ModelIdentifier 기반)
+    func supports(_ model: ModelIdentifier) -> Bool {
+        model.minimumRAMGB * 1024 * 1024 * 1024 <= Int(ProcessInfo.processInfo.physicalMemory)
+    }
+
+    /// 특정 엔진의 기본 모델
+    func defaultModel(for engine: EngineType) -> ModelIdentifier {
+        switch engine {
+        case .whisperKit:
+            defaultModel.modelIdentifier
+        case .qwen3ASR:
+            switch self {
+            case .highEnd: .qwen3_1_7B_8bit
+            case .midRange: .qwen3_0_6B_8bit
+            case .lowEnd: .qwen3_0_6B_4bit
+            }
+        }
     }
 }

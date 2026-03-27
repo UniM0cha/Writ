@@ -142,7 +142,7 @@ struct RecordingView: View {
                     Circle()
                         .fill(WritColor.success)
                         .frame(width: WritDimension.modelDotSize, height: WritDimension.modelDotSize)
-                    Text("\(active.displayName) 모델 사용 중")
+                    Text("\(active.engine.displayName) \(active.displayName) 모델 사용 중")
                         .font(WritFont.caption)
                         .foregroundStyle(isRecording ? .white.opacity(0.7) : WritColor.secondaryText)
                 }
@@ -194,9 +194,9 @@ struct RecordingView: View {
             return false
         }) {
             if case .downloading(let progress) = loading.state {
-                return "\(loading.variant.displayName) 다운로드 중 (\(Int(progress * 100))%)"
+                return "\(loading.identifier.displayName) 다운로드 중 (\(Int(progress * 100))%)"
             }
-            return "\(loading.variant.displayName) 로딩 중..."
+            return "\(loading.identifier.displayName) 로딩 중..."
         }
         return "모델을 로드하는 중..."
     }

@@ -8,7 +8,7 @@ final class MockTranscriptionEngine: TranscriptionEngine, @unchecked Sendable {
     // MARK: - Call Tracking
 
     private(set) var loadModelCallCount = 0
-    private(set) var loadModelLastVariant: WhisperModelVariant?
+    private(set) var loadModelLastIdentifier: ModelIdentifier?
     private(set) var unloadModelCallCount = 0
     private(set) var transcribeCallCount = 0
     private(set) var transcribeLastAudioURL: URL?
@@ -26,23 +26,23 @@ final class MockTranscriptionEngine: TranscriptionEngine, @unchecked Sendable {
     var transcribeError: Error?
 
     /// currentModel 반환값
-    var stubbedCurrentModel: WhisperModelVariant?
+    var stubbedCurrentModel: ModelIdentifier?
 
     /// supportedModels 반환값
-    var stubbedSupportedModels: [WhisperModelVariant] = WhisperModelVariant.allCases
+    var stubbedSupportedModels: [ModelIdentifier] = WhisperModelVariant.allCases.map(\.modelIdentifier)
 
     // MARK: - TranscriptionEngine
 
-    var currentModel: WhisperModelVariant? {
+    var currentModel: ModelIdentifier? {
         stubbedCurrentModel
     }
 
     func loadModel(
-        _ model: WhisperModelVariant,
+        _ model: ModelIdentifier,
         progressCallback: (@Sendable (Float) -> Void)?
     ) async throws {
         loadModelCallCount += 1
-        loadModelLastVariant = model
+        loadModelLastIdentifier = model
 
         // 진행률 콜백 시뮬레이션
         progressCallback?(0.5)
@@ -80,7 +80,7 @@ final class MockTranscriptionEngine: TranscriptionEngine, @unchecked Sendable {
         return TranscriptionOutput(text: "", segments: [], language: nil)
     }
 
-    func supportedModels() -> [WhisperModelVariant] {
+    func supportedModels() -> [ModelIdentifier] {
         stubbedSupportedModels
     }
 
@@ -88,7 +88,7 @@ final class MockTranscriptionEngine: TranscriptionEngine, @unchecked Sendable {
 
     func reset() {
         loadModelCallCount = 0
-        loadModelLastVariant = nil
+        loadModelLastIdentifier = nil
         unloadModelCallCount = 0
         transcribeCallCount = 0
         transcribeLastAudioURL = nil
@@ -97,6 +97,6 @@ final class MockTranscriptionEngine: TranscriptionEngine, @unchecked Sendable {
         transcribeResult = nil
         transcribeError = nil
         stubbedCurrentModel = nil
-        stubbedSupportedModels = WhisperModelVariant.allCases
+        stubbedSupportedModels = WhisperModelVariant.allCases.map(\.modelIdentifier)
     }
 }

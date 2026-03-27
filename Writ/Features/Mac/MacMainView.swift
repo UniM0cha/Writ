@@ -129,15 +129,15 @@ struct MacMainView: View {
 
     private var modelPicker: some View {
         Menu {
-            ForEach(appState.modelManager.models) { model in
+            ForEach(appState.modelManager.currentEngineModels) { model in
                 Button {
                     Task {
-                        try? await appState.modelManager.loadModel(model.variant)
+                        try? await appState.modelManager.loadModel(model.identifier)
                     }
                 } label: {
                     HStack {
-                        Text(model.variant.displayName)
-                        if model.variant == appState.modelManager.activeModel {
+                        Text(model.identifier.displayName)
+                        if model.identifier == appState.modelManager.activeModel {
                             Image(systemName: "checkmark")
                         }
                     }

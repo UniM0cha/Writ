@@ -9,15 +9,15 @@ import SwiftData
 final class PhoneWatchSessionManager: NSObject, ObservableObject {
     static let shared = PhoneWatchSessionManager()
 
-    private var engine: WhisperKitEngine?
+    private var modelManager: ModelManager?
     private var modelContainer: ModelContainer?
 
     private override init() {
         super.init()
     }
 
-    func configure(engine: WhisperKitEngine, modelContainer: ModelContainer) {
-        self.engine = engine
+    func configure(modelManager: ModelManager, modelContainer: ModelContainer) {
+        self.modelManager = modelManager
         self.modelContainer = modelContainer
     }
 
@@ -29,7 +29,7 @@ final class PhoneWatchSessionManager: NSObject, ObservableObject {
 
     /// Watch에서 수신한 녹음 파일 전사 후 결과 반환
     private func handleReceivedFile(url: URL, metadata: [String: Any]) {
-        guard let engine = self.engine else { return }
+        guard let modelManager = self.modelManager else { return }
         let recordingId = metadata["id"] as? String ?? UUID().uuidString
         let duration = metadata["duration"] as? TimeInterval ?? 0
 
@@ -39,22 +39,28 @@ final class PhoneWatchSessionManager: NSObject, ObservableObject {
         let destURL = destDir.appendingPathComponent(url.lastPathComponent)
         try? FileManager.default.copyItem(at: url, to: destURL)
 
-        // SwiftData에 저장
-        if let modelContainer {
-            let context = ModelContext(modelContainer)
-            let recording = Recording(
-                duration: duration,
-                audioFileName: url.lastPathComponent,
-                sourceDevice: .watch
-            )
-            context.insert(recording)
-            try? context.save()
-        }
+        guard let modelContainer else { return }
+
+        // SwiftData에 Recording 저장
+        let context = ModelContext(modelContainer)
+        let audioFileName = url.lastPathComponent
+        let recording = Recording(
+            duration: duration,
+            audioFileName: audioFileName,
+            sourceDevice: .watch
+        )
+        let transcription = Transcription(
+            modelUsed: modelManager.activeModel?.displayName ?? "unknown",
+            status: .pending
+        )
+        recording.transcription = transcription
+        context.insert(recording)
+        try? context.save()
 
         // 전사 실행
         Task {
             do {
-                let output = try await engine.transcribe(
+                let output = try await modelManager.transcribe(
                     audioURL: destURL,
                     language: nil,
                     progressCallback: nil
@@ -71,24 +77,26 @@ final class PhoneWatchSessionManager: NSObject, ObservableObject {
                     WCSession.default.transferUserInfo(result)
                 }
 
-                // SwiftData에 전사 결과 저장
-                if let modelContainer {
-                    let context = ModelContext(modelContainer)
-                    let segments = output.segments.map { seg in
+                // SwiftData에 전사 결과 업데이트
+                let bgContext = ModelContext(modelContainer)
+                let descriptor = FetchDescriptor<Recording>(
+                    predicate: #Predicate { $0.audioFileName == audioFileName }
+                )
+                if let savedRecording = try? bgContext.fetch(descriptor).first {
+                    let segments = output.segments.enumerated().map { index, seg in
                         WritSegment(
                             text: seg.text,
                             startTime: seg.startTime,
-                            endTime: seg.endTime
+                            endTime: seg.endTime,
+                            orderIndex: index,
+                            speaker: seg.speaker
                         )
                     }
-                    let transcription = Transcription(
-                        text: output.text,
-                        modelUsed: engine.currentModel?.rawValue ?? "unknown",
-                        status: .completed,
-                        segments: segments
-                    )
-                    context.insert(transcription)
-                    try? context.save()
+                    savedRecording.transcription?.text = output.text
+                    savedRecording.transcription?.status = .completed
+                    savedRecording.transcription?.segments = segments
+                    savedRecording.transcription?.modelUsed = modelManager.activeModel?.displayName ?? "unknown"
+                    try? bgContext.save()
                 }
             } catch {
                 // 실패 시에도 Watch에 알림

@@ -47,15 +47,13 @@ final class WhisperKitEngineTests: XCTestCase {
 
     func test_loadModel_twoParamOverload_compiles() {
         // TranscriptionEngine 프로토콜 준수용 2-param 오버로드가 존재하는지 컴파일 타임 검증
-        // 이 코드가 컴파일되면 메서드 시그니처가 올바른 것이 증명된다
-        let _: (WhisperModelVariant, (@Sendable (Float) -> Void)?) async throws -> Void = sut.loadModel(_:progressCallback:)
+        let _: (ModelIdentifier, (@Sendable (Float) -> Void)?) async throws -> Void = sut.loadModel(_:progressCallback:)
         // 컴파일 성공 자체가 테스트 통과
     }
 
     func test_loadModel_threeParamOverload_compiles() {
         // ModelManager 전용 3-param 오버로드가 존재하는지 컴파일 타임 검증
-        // phaseCallback 파라미터가 추가되었다
-        let _: (WhisperModelVariant, (@Sendable (Float) -> Void)?, (@Sendable (ModelLoadPhase) -> Void)?) async throws -> Void = sut.loadModel(_:progressCallback:phaseCallback:)
+        let _: (ModelIdentifier, (@Sendable (Float) -> Void)?, (@Sendable (ModelLoadPhase) -> Void)?) async throws -> Void = sut.loadModel(_:progressCallback:phaseCallback:)
         // 컴파일 성공 자체가 테스트 통과
     }
 
@@ -105,7 +103,8 @@ final class WhisperKitEngineTests: XCTestCase {
     func test_supportedModels_alwaysContainsTiny() {
         // tiny 모델은 minimumRAMGB가 1이므로 어떤 환경에서든 포함되어야 한다
         let models = sut.supportedModels()
-        XCTAssertTrue(models.contains(.tiny), "tiny 모델은 항상 지원 목록에 포함되어야 함")
+        let tinyId = WhisperModelVariant.tiny.modelIdentifier
+        XCTAssertTrue(models.contains(tinyId), "tiny 모델은 항상 지원 목록에 포함되어야 함")
     }
 
     func test_supportedModels_containsOnlySupportedVariants() {

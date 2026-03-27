@@ -6,7 +6,13 @@ enum SRTExporter {
         segments.enumerated().map { index, segment in
             let start = formatTimestamp(segment.startTime)
             let end = formatTimestamp(segment.endTime)
-            return "\(index + 1)\n\(start) --> \(end)\n\(segment.text.trimmingCharacters(in: .whitespacesAndNewlines))"
+            let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let line = if let speaker = segment.speaker {
+                "[\(speaker)] \(text)"
+            } else {
+                text
+            }
+            return "\(index + 1)\n\(start) --> \(end)\n\(line)"
         }.joined(separator: "\n\n")
     }
 

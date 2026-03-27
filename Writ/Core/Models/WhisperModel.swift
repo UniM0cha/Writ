@@ -53,20 +53,3 @@ enum ModelState: Codable, Sendable {
     case loaded
     case error(String)
 }
-
-/// 다운로드/사용 가능한 모델 정보
-struct WhisperModelInfo: Identifiable, Sendable {
-    let variant: WhisperModelVariant
-    var state: ModelState
-    var isSupported: Bool
-    var unsupportedReason: String?
-
-    var id: String { variant.id }
-
-    init(variant: WhisperModelVariant, state: ModelState = .notDownloaded, isSupported: Bool = true, unsupportedReason: String? = nil) {
-        self.variant = variant
-        self.state = state
-        self.isSupported = isSupported
-        self.unsupportedReason = unsupportedReason
-    }
-}

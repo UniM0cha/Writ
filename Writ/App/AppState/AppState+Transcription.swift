@@ -1,5 +1,8 @@
 import Foundation
+import os
 import SwiftData
+
+private let logger = Logger(subsystem: AppGroupConstants.logSubsystem, category: "Transcription")
 
 // MARK: - 백그라운드 전사
 
@@ -28,9 +31,20 @@ extension AppState {
 
         let audioURL = AppGroupConstants.recordingsDirectory.appendingPathComponent(audioFileName)
 
-        // 모델이 아직 로드되지 않았으면 로드 대기
+        // 모델이 아직 로드되지 않았으면 저장된 모델 로드 시도
         if modelManager.activeModel == nil {
             await modelManager.loadDefaultModelIfNeeded()
+        }
+
+        // 그래도 모델이 없으면 (최초 실행 등) 전사 불가
+        guard modelManager.activeModel != nil else {
+            logger.warning("transcribeInBackground: 활성 모델 없음, 전사 건너뜀")
+            let ctx = ModelContext(modelContainer)
+            if let recording = ctx.model(for: recordingID) as? Recording {
+                recording.transcription?.status = .failed
+                try? ctx.save()
+            }
+            return
         }
 
         let backgroundContext = ModelContext(modelContainer)

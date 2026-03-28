@@ -25,6 +25,8 @@ packages:
   Qwen3Speech:
     url: https://github.com/ivan-digital/qwen3-asr-swift.git
     from: "0.0.7"
+  mlx-swift:
+    path: ../mlx-swift
 
 targets:
   # ─── Main App (iOS + macOS) ───

@@ -46,6 +46,10 @@ struct TranscribeFileIntent: AppIntent {
                 await appState.modelManager.loadDefaultModelIfNeeded()
             }
 
+            guard appState.modelManager.activeModel != nil else {
+                throw WritIntentError.noModelSelected
+            }
+
             let output = try await appState.modelManager.transcribe(
                 audioURL: destURL, language: lang, progressCallback: nil
             )
@@ -55,6 +59,18 @@ struct TranscribeFileIntent: AppIntent {
         } catch {
             try? FileManager.default.removeItem(at: destURL)
             throw error
+        }
+    }
+}
+
+// MARK: - Error
+
+enum WritIntentError: LocalizedError {
+    case noModelSelected
+
+    var errorDescription: String? {
+        switch self {
+        case .noModelSelected: "음성 인식 모델이 선택되지 않았습니다. Writ 앱에서 모델을 먼저 다운로드해주세요."
         }
     }
 }

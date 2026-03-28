@@ -138,7 +138,7 @@ final class ModelInfoFromWhisperTests: XCTestCase {
     func testStateCanBeUpdated() {
         var info = ModelInfo(identifier: WhisperModelVariant.base.modelIdentifier)
         info.state = .downloading(progress: 0.5)
-        if case .downloading(let progress) = info.state {
+        if case .downloading(let progress, _) = info.state {
             XCTAssertEqual(progress, 0.5, accuracy: 0.001)
         } else {
             XCTFail("State should be .downloading")

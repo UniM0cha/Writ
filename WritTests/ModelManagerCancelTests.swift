@@ -192,7 +192,7 @@ final class ModelManagerCancelTests: XCTestCase {
         }
         let model = findModel(id)
         XCTAssertNotNil(model)
-        if case .downloading(let progress) = model!.state {
+        if case .downloading(let progress, _) = model!.state {
             XCTAssertEqual(progress, 0.0, accuracy: 0.001)
         } else {
             XCTFail("loadModel 초기 상태는 .downloading(progress: 0)이어야 한다. 실제: \(model!.state)")
@@ -204,7 +204,7 @@ final class ModelManagerCancelTests: XCTestCase {
         if case .loading = initialState {
             XCTFail("초기 상태는 .loading이 아니라 .downloading(progress: 0)이어야 한다")
         }
-        if case .downloading(let p) = initialState {
+        if case .downloading(let p, _) = initialState {
             XCTAssertEqual(p, 0.0, accuracy: 0.001)
         } else {
             XCTFail("Expected .downloading")
@@ -265,5 +265,66 @@ final class ModelManagerCancelTests: XCTestCase {
             sut.models[index].state = .loading
         }
         XCTAssertNil(sut.activeModel)
+    }
+
+    // MARK: - resetActiveStates
+
+    func test_resetActiveStates_resetsDownloadingToNotDownloaded() {
+        let id = smallId()
+        if let index = findIndex(id) {
+            sut.models[index].state = .downloading(progress: 0.7)
+        }
+        sut.resetActiveStates()
+        let model = findModel(id)
+        switch model!.state {
+        case .notDownloaded, .downloaded: break
+        default: XCTFail("resetActiveStates 후 downloading 상태가 남아있으면 안 됨. 실제: \(model!.state)")
+        }
+    }
+
+    func test_resetActiveStates_resetsOptimizingToDownloaded() {
+        let id = baseId()
+        if let index = findIndex(id) {
+            sut.models[index].state = .optimizing
+        }
+        sut.resetActiveStates()
+        let model = findModel(id)
+        if case .downloaded = model!.state { } else {
+            XCTFail("optimizing 상태는 다운로드 완료이므로 .downloaded로 리셋되어야 함. 실제: \(model!.state)")
+        }
+    }
+
+    func test_resetActiveStates_resetsLoadingToDownloaded() {
+        let id = tinyId()
+        if let index = findIndex(id) {
+            sut.models[index].state = .loading
+        }
+        sut.resetActiveStates()
+        let model = findModel(id)
+        if case .downloaded = model!.state { } else {
+            XCTFail("loading 상태는 다운로드 완료이므로 .downloaded로 리셋되어야 함. 실제: \(model!.state)")
+        }
+    }
+
+    func test_resetActiveStates_doesNotTouchStableStates() {
+        let loadedId = tinyId()
+        let downloadedId = baseId()
+        let errorId = smallId()
+
+        if let i = findIndex(loadedId) { sut.models[i].state = .loaded }
+        if let i = findIndex(downloadedId) { sut.models[i].state = .downloaded }
+        if let i = findIndex(errorId) { sut.models[i].state = .error("test") }
+
+        sut.resetActiveStates()
+
+        if case .loaded = findModel(loadedId)!.state { } else {
+            XCTFail("loaded 상태가 변경되었음")
+        }
+        if case .downloaded = findModel(downloadedId)!.state { } else {
+            XCTFail("downloaded 상태가 변경되었음")
+        }
+        if case .error = findModel(errorId)!.state { } else {
+            XCTFail("error 상태가 변경되었음")
+        }
     }
 }

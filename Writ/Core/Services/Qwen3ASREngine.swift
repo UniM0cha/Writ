@@ -3,6 +3,8 @@ import Foundation
 import os
 import Qwen3ASR
 import AudioCommon
+import MLX
+import MLXNN
 
 private let logger = Logger(subsystem: AppGroupConstants.logSubsystem, category: "Qwen3ASR")
 
@@ -24,27 +26,52 @@ final class Qwen3ASREngine: TranscriptionEngine, @unchecked Sendable {
         lock.withLock { _currentModel }
     }
 
-    init() {}
+    init() {
+        // iOS에서 MLX GPU 메모리 캐시가 무한히 커지는 것을 방지
+        Memory.cacheLimit = 64 * 1024 * 1024 // 64MB
+    }
 
+    /// 프로토콜 준수용 (statusCallback 없이 호출)
     func loadModel(
         _ model: ModelIdentifier,
         progressCallback: (@Sendable (Float) -> Void)?
     ) async throws {
+        try await loadModel(model, progressCallback: progressCallback, statusCallback: nil)
+    }
+
+    /// ModelManager 전용: ASR 모델 + ForcedAligner 다운로드를 통합 진행도로 보고
+    func loadModel(
+        _ model: ModelIdentifier,
+        progressCallback: (@Sendable (Float) -> Void)?,
+        statusCallback: (@Sendable (String) -> Void)?
+    ) async throws {
         logger.debug("loadModel: \(model.variantKey)")
 
+        // 1단계: ASR 모델 (전체의 0% ~ 70%)
+        statusCallback?("모델 다운로드 중")
         let asrModel = try await Qwen3ASRModel.fromPretrained(
             modelId: model.variantKey,
             progressHandler: { progress, status in
                 logger.debug("loadModel progress: \(progress) - \(status)")
-                progressCallback?(Float(progress))
+                progressCallback?(Float(progress) * 0.7)
+                if status.contains("Loading") {
+                    statusCallback?("모델 로드 중")
+                }
             }
         )
 
-        // ForcedAligner도 함께 로드 (타임스탬프 생성용)
+        try Task.checkCancellation()
+
+        // 2단계: ForcedAligner (전체의 70% ~ 100%)
+        statusCallback?("Aligner 다운로드 중")
         let forcedAligner = try await Qwen3ForcedAligner.fromPretrained(
             modelId: ForcedAlignerVariant.mlx4bit.rawValue,
             progressHandler: { progress, status in
                 logger.debug("aligner progress: \(progress) - \(status)")
+                progressCallback?(0.7 + Float(progress) * 0.3)
+                if status.contains("Loading") {
+                    statusCallback?("Aligner 로드 중")
+                }
             }
         )
 
@@ -56,14 +83,19 @@ final class Qwen3ASREngine: TranscriptionEngine, @unchecked Sendable {
     }
 
     func unloadModel() async {
-        let modelToUnload = lock.withLock { () -> Qwen3ASRModel? in
+        let (modelToUnload, alignerToUnload) = lock.withLock { () -> (Qwen3ASRModel?, Qwen3ForcedAligner?) in
             let m = self.model
+            let a = self.aligner
             self.model = nil
             self.aligner = nil
             self._currentModel = nil
-            return m
+            return (m, a)
         }
         modelToUnload?.unload()
+        // ForcedAligner는 ModelMemoryManageable 미구현 → 직접 clearParameters
+        alignerToUnload?.audioEncoder.clearParameters()
+        (alignerToUnload?.textDecoder as? Module)?.clearParameters()
+        alignerToUnload?.classifyHead.clearParameters()
     }
 
     func transcribe(

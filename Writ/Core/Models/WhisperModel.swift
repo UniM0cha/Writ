@@ -46,7 +46,7 @@ enum WhisperModelVariant: String, CaseIterable, Codable, Sendable, Identifiable 
 /// 모델의 로컬 상태
 enum ModelState: Codable, Sendable {
     case notDownloaded
-    case downloading(progress: Float)
+    case downloading(progress: Float, status: String? = nil)
     case downloaded
     case optimizing
     case loading

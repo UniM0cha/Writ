@@ -172,4 +172,95 @@ final class WhisperKitEngineTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - unloadModel 메모리 관리 (OOM 수정 검증)
+
+    func test_unloadModel_afterUnload_currentModelRemainsNil() async {
+        // unloadModel이 kit?.unloadModels()를 호출한 후에도 상태가 일관되는지 확인
+        await sut.unloadModel()
+        XCTAssertNil(sut.currentModel)
+
+        // 두 번째 호출 시에도 안전 (kit가 nil인 상태에서 unloadModels 호출되지 않아야 함)
+        await sut.unloadModel()
+        XCTAssertNil(sut.currentModel,
+                     "두 번째 unloadModel 이후에도 currentModel은 nil이어야 함")
+    }
+
+    func test_unloadModel_thenTranscribe_throwsModelNotLoaded() async {
+        // unloadModel이 CoreML 모델까지 해제한 후 transcribe 호출 시 에러 발생 확인
+        await sut.unloadModel()
+
+        let dummyURL = URL(fileURLWithPath: "/tmp/test.wav")
+        do {
+            _ = try await sut.transcribe(audioURL: dummyURL, language: "en", progressCallback: nil)
+            XCTFail("unloadModel 후 transcribe가 성공해서는 안 됨")
+        } catch let error as WhisperKitEngineError {
+            if case .modelNotLoaded = error {
+                // 예상대로: unloadModels()로 CoreML 모델 해제 후 transcribe 불가
+            } else {
+                XCTFail("Expected .modelNotLoaded, got \(error)")
+            }
+        } catch {
+            XCTFail("Expected WhisperKitEngineError, got \(type(of: error))")
+        }
+    }
+
+    func test_transcribe_withProgressCallback_withoutLoadedModel_throwsBeforeCallback() async {
+        // 모델 미로드 시 progressCallback이 호출되지 않아야 한다
+        var progressCalled = false
+        let dummyURL = URL(fileURLWithPath: "/tmp/nonexistent.m4a")
+
+        do {
+            _ = try await sut.transcribe(
+                audioURL: dummyURL,
+                language: nil,
+                progressCallback: { _ in progressCalled = true }
+            )
+            XCTFail("transcribe가 성공해서는 안 됨")
+        } catch {
+            XCTAssertFalse(progressCalled,
+                          "모델 미로드 시 progressCallback이 호출되어서는 안 됨")
+        }
+    }
+
+    // MARK: - 동시성 안전성
+
+    func test_concurrentUnloadCalls_doNotCrash() async {
+        // 여러 Task에서 동시에 unloadModel을 호출해도 크래시하지 않아야 한다
+        // unloadModels()가 async이므로 동시 호출 시 경합 조건 검증
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<10 {
+                group.addTask {
+                    await self.sut.unloadModel()
+                }
+            }
+        }
+        XCTAssertNil(sut.currentModel)
+    }
+
+    func test_concurrentUnloadAndTranscribe_doNotCrash() async {
+        // unloadModel과 transcribe를 동시에 호출해도 크래시하지 않아야 한다
+        let dummyURL = URL(fileURLWithPath: "/tmp/test.m4a")
+
+        await withTaskGroup(of: Void.self) { group in
+            // unload tasks
+            for _ in 0..<5 {
+                group.addTask {
+                    await self.sut.unloadModel()
+                }
+            }
+            // transcribe tasks (에러가 발생하지만 크래시하지 않아야 함)
+            for _ in 0..<5 {
+                group.addTask {
+                    _ = try? await self.sut.transcribe(
+                        audioURL: dummyURL,
+                        language: nil,
+                        progressCallback: nil
+                    )
+                }
+            }
+        }
+        // 모든 Task가 크래시 없이 완료되면 테스트 성공
+        XCTAssertNil(sut.currentModel)
+    }
 }

@@ -215,7 +215,7 @@ final class ModelManagerTests: XCTestCase {
 
     func test_modelState_downloading() {
         let state: ModelState = .downloading(progress: 0.5)
-        if case .downloading(let progress) = state {
+        if case .downloading(let progress, _) = state {
             XCTAssertEqual(progress, 0.5, accuracy: 0.001)
         } else {
             XCTFail("Expected downloading")
@@ -223,13 +223,13 @@ final class ModelManagerTests: XCTestCase {
     }
 
     func test_modelState_downloadingBoundaryValues() {
-        if case .downloading(let progress) = ModelState.downloading(progress: 0.0) {
+        if case .downloading(let progress, _) = ModelState.downloading(progress: 0.0) {
             XCTAssertEqual(progress, 0.0, accuracy: 0.001)
         } else {
             XCTFail("Expected downloading with 0.0")
         }
 
-        if case .downloading(let progress) = ModelState.downloading(progress: 1.0) {
+        if case .downloading(let progress, _) = ModelState.downloading(progress: 1.0) {
             XCTAssertEqual(progress, 1.0, accuracy: 0.001)
         } else {
             XCTFail("Expected downloading with 1.0")
@@ -293,7 +293,7 @@ final class ModelManagerTests: XCTestCase {
         }
         let model = sut.models.first { $0.identifier == tinyId }
         XCTAssertNotNil(model)
-        if case .downloading(let progress) = model!.state {
+        if case .downloading(let progress, _) = model!.state {
             XCTAssertEqual(progress, 0.0, accuracy: 0.001)
         } else {
             XCTFail("loadModel 초기 상태는 .downloading(progress: 0)이어야 한다. 실제: \(model!.state)")

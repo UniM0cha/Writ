@@ -36,7 +36,7 @@ final class AppState: ObservableObject {
     /// 순차 처리 전사 큐 (ANE 경합 방지)
     var transcriptionQueue: [TranscriptionQueueItem] = []
     /// 큐 처리 루프 실행 중 여부
-    var isProcessingQueue = false
+    @Published var isProcessingQueue = false
 
     #if os(iOS)
     let liveActivityManager = LiveActivityManager()
@@ -118,7 +118,21 @@ final class AppState: ObservableObject {
         }
         #endif
 
-        await modelManager.loadDefaultModelIfNeeded()
+        // 크래시 루프 방지: 연속 2회 이상 모델 로드 실패 시 자동 로드 건너뛰기
+        let failKey = "consecutiveLoadFailures"
+        let failures = UserDefaults.standard.integer(forKey: failKey)
+        if failures >= 2 {
+            UserDefaults.standard.set(0, forKey: failKey)
+            modelManager.clearPersistedSelection()
+        } else {
+            UserDefaults.standard.set(failures + 1, forKey: failKey)
+            await modelManager.loadDefaultModelIfNeeded()
+            // 모델 로드 성공 또는 저장된 선택이 없는 최초 실행 시에만 리셋
+            let hasPersistedSelection = UserDefaults.standard.string(forKey: "selectedModelVariant") != nil
+            if modelManager.activeModel != nil || !hasPersistedSelection {
+                UserDefaults.standard.set(0, forKey: failKey)
+            }
+        }
 
         // WatchConnectivity 설정
         #if os(iOS)
@@ -162,6 +176,10 @@ final class AppState: ObservableObject {
 
     func startRecordingFlow() async throws {
         guard !recorderService.isRecording else { return }
+        guard modelManager.activeModel != nil else {
+            selectedTab = .settings
+            return
+        }
         _ = try await recorderService.startRecording()
         selectedTab = .record
         #if os(iOS)

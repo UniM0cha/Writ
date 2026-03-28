@@ -1,5 +1,8 @@
 import Foundation
 import os
+#if os(iOS)
+import AudioCommon
+#endif
 
 private let logger = Logger(subsystem: AppGroupConstants.logSubsystem, category: "Model")
 
@@ -51,7 +54,7 @@ final class ModelManager: ObservableObject {
             let supported = capability.supports(id)
             return ModelInfo(
                 identifier: id,
-                state: .notDownloaded,
+                state: Self.isQwenModelDownloaded(id) ? .downloaded : .notDownloaded,
                 isSupported: supported,
                 unsupportedReason: supported ? nil : "이 기기에서는 메모리가 부족합니다"
             )
@@ -92,15 +95,34 @@ final class ModelManager: ObservableObject {
         }
     }
 
+    /// Qwen3-ASR 모델이 로컬에 캐시되었는지 확인 (safetensors 존재 여부)
+    #if os(iOS)
+    private static func isQwenModelDownloaded(_ identifier: ModelIdentifier) -> Bool {
+        guard let cacheDir = try? HuggingFaceDownloader.getCacheDirectory(for: identifier.variantKey) else {
+            return false
+        }
+        return HuggingFaceDownloader.weightsExist(in: cacheDir)
+    }
+    #endif
+
+    /// 모델이 로컬에 다운로드되었는지 엔진별 확인
+    private static func isModelDownloaded(_ identifier: ModelIdentifier) -> Bool {
+        if let variant = identifier.whisperVariant {
+            return isWhisperModelDownloaded(variant)
+        }
+        #if os(iOS)
+        return isQwenModelDownloaded(identifier)
+        #else
+        return false
+        #endif
+    }
+
     /// 앱 시작 시 다운로드 상태 갱신 + 레거시 경로 정리
     func refreshDownloadStates() {
         cleanupLegacyModels()
         for i in models.indices {
             let model = models[i]
-            guard model.identifier.engine == .whisperKit,
-                  let variant = model.identifier.whisperVariant else { continue }
-
-            let isDownloaded = Self.isWhisperModelDownloaded(variant)
+            let isDownloaded = Self.isModelDownloaded(model.identifier)
             if isDownloaded {
                 if case .notDownloaded = model.state {
                     models[i].state = .downloaded
@@ -138,7 +160,9 @@ final class ModelManager: ObservableObject {
             do {
                 try await loadModel(identifier)
                 return
-            } catch { }
+            } catch {
+                clearPersistedSelection()
+            }
         }
 
         // 2. 기존 포맷 (variant만, engineType 없음) → whisperKit으로 간주
@@ -149,31 +173,19 @@ final class ModelManager: ObservableObject {
             do {
                 try await loadModel(saved.modelIdentifier)
                 return
-            } catch { }
-        }
-
-        // 3. 기본 모델 fallback
-        selectedEngine = .whisperKit
-        let defaultModel = capability.defaultModel.modelIdentifier
-        do {
-            try await loadModel(defaultModel)
-        } catch {
-            if capability.defaultModel != .tiny {
-                try? await loadModel(WhisperModelVariant.tiny.modelIdentifier)
+            } catch {
+                clearPersistedSelection()
             }
         }
+
+        // 3. 최초 실행 — 사용자가 직접 모델을 선택하도록 아무것도 하지 않음
     }
 
     /// 다운로드/로드 취소
     func cancelDownload(_ identifier: ModelIdentifier) {
         activeLoadTask?.cancel()
         activeLoadTask = nil
-        let isDownloaded: Bool
-        if let variant = identifier.whisperVariant {
-            isDownloaded = Self.isWhisperModelDownloaded(variant)
-        } else {
-            isDownloaded = false
-        }
+        let isDownloaded = Self.isModelDownloaded(identifier)
         updateModelState(identifier, state: isDownloaded ? .downloaded : .notDownloaded)
     }
 
@@ -190,15 +202,15 @@ final class ModelManager: ObservableObject {
         if let existingTask = activeLoadTask {
             existingTask.cancel()
             try? await existingTask.value
+            resetActiveStates()
         }
 
-        updateModelState(identifier, state: .downloading(progress: 0))
+        let alreadyDownloaded = Self.isModelDownloaded(identifier)
+        updateModelState(identifier, state: alreadyDownloaded ? .loading : .downloading(progress: 0))
 
         let task = Task { [weak self] in
             guard let self else { return }
             try Task.checkCancellation()
-
-            let eng = engine(for: identifier)
 
             if identifier.engine == .whisperKit {
                 // WhisperKitEngine에는 phaseCallback이 있으므로 직접 호출
@@ -207,7 +219,10 @@ final class ModelManager: ObservableObject {
                     progressCallback: { [weak self] progress in
                         guard let self else { return }
                         Task { @MainActor [weak self] in
-                            self?.updateModelState(identifier, state: .downloading(progress: progress))
+                            guard let self,
+                                  let idx = self.models.firstIndex(where: { $0.identifier == identifier }),
+                                  case .downloading = self.models[idx].state else { return }
+                            self.updateModelState(identifier, state: .downloading(progress: progress))
                         }
                     },
                     phaseCallback: { [weak self] phase in
@@ -221,16 +236,33 @@ final class ModelManager: ObservableObject {
                         }
                     }
                 )
-            } else {
-                try await eng.loadModel(
+            } else if identifier.engine == .qwen3ASR {
+                #if os(iOS)
+                // Qwen3ASREngine에는 statusCallback이 있으므로 직접 호출
+                let qwen = engine(for: identifier) as! Qwen3ASREngine
+                try await qwen.loadModel(
                     identifier,
                     progressCallback: { [weak self] progress in
                         guard let self else { return }
                         Task { @MainActor [weak self] in
-                            self?.updateModelState(identifier, state: .downloading(progress: progress))
+                            guard let self,
+                                  let idx = self.models.firstIndex(where: { $0.identifier == identifier }),
+                                  case .downloading(_, let currentStatus) = self.models[idx].state else { return }
+                            self.updateModelState(identifier, state: .downloading(progress: progress, status: currentStatus))
+                        }
+                    },
+                    statusCallback: { [weak self] status in
+                        Task { @MainActor [weak self] in
+                            guard let self,
+                                  let idx = self.models.firstIndex(where: { $0.identifier == identifier }),
+                                  case .downloading(let progress, _) = self.models[idx].state else { return }
+                            self.updateModelState(identifier, state: .downloading(progress: progress, status: status))
                         }
                     }
                 )
+                #else
+                fatalError("Qwen3ASR is not available on this platform")
+                #endif
             }
         }
         activeLoadTask = task
@@ -250,6 +282,7 @@ final class ModelManager: ObservableObject {
             persistSelection(identifier)
         } catch is CancellationError {
             activeLoadTask = nil
+            resetActiveStates()
         } catch {
             activeLoadTask = nil
             let message: String
@@ -271,10 +304,7 @@ final class ModelManager: ObservableObject {
             let eng = engine(for: identifier)
             await eng.unloadModel()
             activeModel = nil
-            UserDefaults.standard.removeObject(forKey: "selectedModelVariant")
-            UserDefaults.standard.removeObject(forKey: "selectedEngineType")
-            AppGroupConstants.sharedDefaults.removeObject(forKey: "selectedModelVariant")
-            AppGroupConstants.sharedDefaults.removeObject(forKey: "selectedEngineType")
+            clearPersistedSelection()
         }
 
         if identifier.engine == .whisperKit, let variant = identifier.whisperVariant {
@@ -330,10 +360,37 @@ final class ModelManager: ObservableObject {
 
     // MARK: - Private
 
+    /// 다운로드/로드 중이던 모델 상태를 리셋 (취소 시 호출)
+    func resetActiveStates() {
+        for i in models.indices {
+            switch models[i].state {
+            case .optimizing, .loading:
+                // optimizing/loading 단계 진입 = 다운로드 완료 상태
+                models[i].state = .downloaded
+            case .downloading:
+                if Self.isModelDownloaded(models[i].identifier) {
+                    models[i].state = .downloaded
+                } else {
+                    models[i].state = .notDownloaded
+                }
+            default:
+                break
+            }
+        }
+    }
+
     private func updateModelState(_ identifier: ModelIdentifier, state: ModelState) {
         if let index = models.firstIndex(where: { $0.identifier == identifier }) {
             models[index].state = state
         }
+    }
+
+    func clearPersistedSelection() {
+        UserDefaults.standard.removeObject(forKey: "selectedModelVariant")
+        UserDefaults.standard.removeObject(forKey: "selectedEngineType")
+        AppGroupConstants.sharedDefaults.removeObject(forKey: "selectedModelVariant")
+        AppGroupConstants.sharedDefaults.removeObject(forKey: "selectedEngineType")
+        AppGroupConstants.sharedDefaults.removeObject(forKey: "selectedModelDisplayName")
     }
 
     private func persistSelection(_ identifier: ModelIdentifier) {

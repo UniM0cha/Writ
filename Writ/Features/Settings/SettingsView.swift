@@ -237,22 +237,30 @@ struct ModelRowView: View {
                 .padding(.vertical, WritSpacing.xxs)
                 .background(WritColor.accentLight, in: Capsule())
 
-        case .downloading(let progress):
-            Button(action: onCancel) {
-                ZStack {
-                    Circle()
-                        .stroke(WritColor.accent.opacity(0.2), lineWidth: 3.5)
-                    Circle()
-                        .trim(from: 0, to: CGFloat(progress))
-                        .stroke(WritColor.accent, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(WritColor.accent)
-                        .frame(width: 10, height: 10)
+        case .downloading(let progress, let status):
+            HStack(spacing: WritSpacing.xs) {
+                if let status {
+                    Text(status)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(WritColor.secondaryText)
                 }
-                .frame(width: 36, height: 36)
+
+                Button(action: onCancel) {
+                    ZStack {
+                        Circle()
+                            .stroke(WritColor.accent.opacity(0.2), lineWidth: 3.5)
+                        Circle()
+                            .trim(from: 0, to: CGFloat(progress))
+                            .stroke(WritColor.accent, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(WritColor.accent)
+                            .frame(width: 10, height: 10)
+                    }
+                    .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
         case .downloaded:
             Image(systemName: "checkmark.circle")
@@ -276,9 +284,16 @@ struct ModelRowView: View {
                 .controlSize(.small)
 
         case .error(let message):
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(WritColor.recordingRed)
-                .help(message)
+            HStack(spacing: WritSpacing.xs) {
+                Text(message)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(WritColor.recordingRed)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.trailing)
+
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(WritColor.recordingRed)
+            }
         }
     }
 }

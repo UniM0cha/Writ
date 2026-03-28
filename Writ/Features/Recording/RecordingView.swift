@@ -8,6 +8,16 @@ struct RecordingView: View {
     @AppStorage("autoCopyEnabled") private var autoCopyEnabled = false
 
     private var isRecording: Bool { appState.recorderService.isRecording }
+    private var isTranscribing: Bool { appState.isProcessingQueue }
+
+    private enum RecordButtonState: Equatable {
+        case idle, recording, transcribing
+    }
+    private var buttonState: RecordButtonState {
+        if isRecording { return .recording }
+        if isTranscribing { return .transcribing }
+        return .idle
+    }
 
     private var isModelReady: Bool {
         appState.modelManager.activeModel != nil
@@ -126,9 +136,19 @@ struct RecordingView: View {
 
     // MARK: - Model Indicator
 
+    /// 모델이 로드 중인지 (다운로드/최적화/로딩 상태)
+    private var isModelLoading: Bool {
+        appState.modelManager.models.contains {
+            switch $0.state {
+            case .downloading, .optimizing, .loading: return true
+            default: return false
+            }
+        }
+    }
+
     private var modelIndicator: some View {
         Group {
-            if !isModelReady {
+            if isModelLoading {
                 HStack(spacing: WritSpacing.xs) {
                     ProgressView()
                         .controlSize(.small)
@@ -136,6 +156,20 @@ struct RecordingView: View {
                     Text(modelStatusText)
                         .font(WritFont.caption)
                         .foregroundStyle(isRecording ? .white.opacity(0.7) : WritColor.secondaryText)
+
+                    if let loadingModel = appState.modelManager.models.first(where: {
+                        switch $0.state {
+                        case .downloading, .optimizing, .loading: return true
+                        default: return false
+                        }
+                    }) {
+                        Button {
+                            appState.modelManager.cancelDownload(loadingModel.identifier)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(isRecording ? .white.opacity(0.5) : WritColor.secondaryText)
+                        }
+                    }
                 }
             } else if let active = appState.modelManager.activeModel {
                 HStack(spacing: WritSpacing.xxs) {
@@ -145,6 +179,18 @@ struct RecordingView: View {
                     Text("\(active.engine.displayName) \(active.displayName) 모델 사용 중")
                         .font(WritFont.caption)
                         .foregroundStyle(isRecording ? .white.opacity(0.7) : WritColor.secondaryText)
+                }
+            } else {
+                Button {
+                    appState.selectedTab = .settings
+                } label: {
+                    HStack(spacing: WritSpacing.xxs) {
+                        Image(systemName: "arrow.down.circle")
+                            .font(.system(size: 12))
+                        Text("모델을 선택해주세요")
+                            .font(WritFont.caption)
+                    }
+                    .foregroundStyle(WritColor.accent)
                 }
             }
         }
@@ -158,13 +204,16 @@ struct RecordingView: View {
             ZStack {
                 // 외부 링
                 Circle()
-                    .strokeBorder(WritColor.recordingRed, lineWidth: WritDimension.recordButtonBorder)
+                    .strokeBorder(
+                        isTranscribing ? WritColor.warning : WritColor.recordingRed,
+                        lineWidth: WritDimension.recordButtonBorder
+                    )
                     .frame(
                         width: WritDimension.recordButtonOuter,
                         height: WritDimension.recordButtonOuter
                     )
 
-                // 내부: 원 ↔ 사각형 모프
+                // 내부: 원 ↔ 사각형 ↔ 스피너 모프
                 if isRecording {
                     RoundedRectangle(cornerRadius: WritDimension.recordButtonStopRadius)
                         .fill(WritColor.recordingRed)
@@ -172,6 +221,9 @@ struct RecordingView: View {
                             width: WritDimension.recordButtonStopSize,
                             height: WritDimension.recordButtonStopSize
                         )
+                } else if isTranscribing {
+                    ProgressView()
+                        .tint(WritColor.warning)
                 } else {
                     Circle()
                         .fill(WritColor.recordingRed)
@@ -181,8 +233,16 @@ struct RecordingView: View {
                         )
                 }
             }
-            .animation(WritAnimation.buttonMorph, value: isRecording)
+            .animation(WritAnimation.buttonMorph, value: buttonState)
         }
+        .disabled(isTranscribing)
+        .accessibilityLabel(
+            isRecording ? "녹음 중지" :
+            isTranscribing ? "전사 처리 중" : "녹음 시작"
+        )
+        .accessibilityHint(
+            isTranscribing ? "전사가 완료되면 녹음을 시작할 수 있습니다" : ""
+        )
     }
 
     // MARK: - Model Status Text
@@ -191,10 +251,15 @@ struct RecordingView: View {
         if let loading = appState.modelManager.models.first(where: {
             if case .loading = $0.state { return true }
             if case .downloading = $0.state { return true }
+            if case .optimizing = $0.state { return true }
             return false
         }) {
-            if case .downloading(let progress) = loading.state {
-                return "\(loading.identifier.displayName) 다운로드 중 (\(Int(progress * 100))%)"
+            if case .downloading(let progress, let status) = loading.state {
+                let label = status ?? "다운로드 중"
+                return "\(loading.identifier.displayName) \(label) (\(Int(progress * 100))%)"
+            }
+            if case .optimizing = loading.state {
+                return "\(loading.identifier.displayName) 최적화 중..."
             }
             return "\(loading.identifier.displayName) 로딩 중..."
         }
@@ -212,15 +277,14 @@ struct RecordingView: View {
     }
 
     private func startRecording() {
-        Task {
-            try? await appState.startRecordingFlow()
+        // 모델이 선택되지 않았으면 설정 탭으로 이동
+        guard appState.modelManager.activeModel != nil || isModelLoading else {
+            appState.selectedTab = .settings
+            return
         }
 
-        // 모델이 아직 로드되지 않았으면 별도 Task로 백그라운드 로드
-        if appState.modelManager.activeModel == nil {
-            Task {
-                await appState.modelManager.loadDefaultModelIfNeeded()
-            }
+        Task {
+            try? await appState.startRecordingFlow()
         }
     }
 

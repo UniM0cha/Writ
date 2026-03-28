@@ -79,10 +79,13 @@ final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
     }
 
     func unloadModel() async {
-        lock.withLock {
+        let kit = lock.withLock { () -> WhisperKit? in
+            let k = self.whisperKit
             self.whisperKit = nil
             self._currentModel = nil
+            return k
         }
+        await kit?.unloadModels()
     }
 
     func transcribe(

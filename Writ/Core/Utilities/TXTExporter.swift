@@ -6,7 +6,12 @@ enum TXTExporter {
         if includeTimestamps {
             return segments.map { segment in
                 let time = formatTimestamp(segment.startTime)
-                return "[\(time)] \(segment.text.trimmingCharacters(in: .whitespacesAndNewlines))"
+                let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let speaker = segment.speaker {
+                    return "[\(time)] [\(speaker)] \(text)"
+                } else {
+                    return "[\(time)] \(text)"
+                }
             }.joined(separator: "\n")
         } else {
             return segments.map {

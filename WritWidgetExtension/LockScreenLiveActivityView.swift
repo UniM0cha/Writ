@@ -71,10 +71,15 @@ struct LockScreenLiveActivityView: View {
                 .foregroundStyle(.white.opacity(0.6))
                 .monospacedDigit()
         case .transcribing:
-            Text("\(Int(context.state.transcriptionProgress * 100))%")
-                .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.6))
-                .monospacedDigit()
+            if context.state.transcriptionProgress >= 0.01 {
+                Text("\(Int(context.state.transcriptionProgress * 100))%")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .monospacedDigit()
+            } else {
+                ProgressView()
+                    .tint(.white.opacity(0.6))
+            }
         case .completed:
             Text("붙여넣기하세요")
                 .font(.system(size: 13))
@@ -98,9 +103,15 @@ struct LockScreenLiveActivityView: View {
             }
             .buttonStyle(.plain)
         case .transcribing:
-            ProgressView(value: Double(context.state.transcriptionProgress))
-                .tint(.blue)
-                .frame(width: 60)
+            if context.state.transcriptionProgress >= 0.01 {
+                ProgressView(value: Double(context.state.transcriptionProgress))
+                    .tint(.blue)
+                    .frame(width: 60)
+            } else {
+                ProgressView()
+                    .tint(.blue)
+                    .frame(width: 60)
+            }
         case .completed:
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 20))

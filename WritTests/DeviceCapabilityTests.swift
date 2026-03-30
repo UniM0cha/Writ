@@ -111,12 +111,12 @@ final class DeviceCapabilityTests: XCTestCase {
         }
     }
 
-    func testSupportsModelIdentifier_qwenSmallestModel() {
-        // Qwen 0.6B 4-bit requires 2 GB RAM; test machines should support this
-        let qwen = ModelIdentifier.qwen3_0_6B_4bit
+    func testSupportsModelIdentifier_qwenCoreMLModel() {
+        // Qwen3-ASR CoreML requires 2 GB RAM; test machines should support this
+        let qwen = ModelIdentifier.qwen3_0_6B_int8
         let capability = DeviceCapability.current
         // On a test Mac with >=2GB RAM this should be true
-        XCTAssertTrue(capability.supports(qwen), "Current device should support smallest Qwen model")
+        XCTAssertTrue(capability.supports(qwen), "Current device should support Qwen3 CoreML model")
     }
 
     func testSupportsModelIdentifier_returnsValueForAllQwenModels() {
@@ -159,15 +159,22 @@ final class DeviceCapabilityTests: XCTestCase {
     }
 
     func testDefaultModel_qwen3ASR_highEnd() {
-        XCTAssertEqual(DeviceCapability.highEnd.defaultModel(for: .qwen3ASR), .qwen3_1_7B_8bit)
+        XCTAssertEqual(DeviceCapability.highEnd.defaultModel(for: .qwen3ASR), .qwen3_1_7B_int8)
     }
 
     func testDefaultModel_qwen3ASR_midRange() {
-        XCTAssertEqual(DeviceCapability.midRange.defaultModel(for: .qwen3ASR), .qwen3_0_6B_8bit)
+        XCTAssertEqual(DeviceCapability.midRange.defaultModel(for: .qwen3ASR), .qwen3_0_6B_int8)
     }
 
     func testDefaultModel_qwen3ASR_lowEnd() {
-        XCTAssertEqual(DeviceCapability.lowEnd.defaultModel(for: .qwen3ASR), .qwen3_0_6B_4bit)
+        XCTAssertEqual(DeviceCapability.lowEnd.defaultModel(for: .qwen3ASR), .qwen3_0_6B_int4)
+    }
+
+    func testDefaultModel_qwen3ASR_eachTierReturnsTierAppropriateModel() {
+        // With 4 CoreML variants, each tier picks the best model for its capability
+        XCTAssertEqual(DeviceCapability.highEnd.defaultModel(for: .qwen3ASR), .qwen3_1_7B_int8)
+        XCTAssertEqual(DeviceCapability.midRange.defaultModel(for: .qwen3ASR), .qwen3_0_6B_int8)
+        XCTAssertEqual(DeviceCapability.lowEnd.defaultModel(for: .qwen3ASR), .qwen3_0_6B_int4)
     }
 
     func testDefaultModel_forAllEngines_isInCatalog() {
@@ -184,18 +191,16 @@ final class DeviceCapabilityTests: XCTestCase {
         }
     }
 
-    func testDefaultModel_qwen3ASR_ramScalesWithCapability() {
+    func testDefaultModel_qwen3ASR_tieredRAMRequirements() {
+        // With 4 CoreML variants, each tier has appropriate RAM requirements
         let lowEnd = DeviceCapability.lowEnd.defaultModel(for: .qwen3ASR)
         let midRange = DeviceCapability.midRange.defaultModel(for: .qwen3ASR)
         let highEnd = DeviceCapability.highEnd.defaultModel(for: .qwen3ASR)
 
-        XCTAssertLessThanOrEqual(
-            lowEnd.minimumRAMGB, midRange.minimumRAMGB,
-            "Low-end default should not require more RAM than mid-range default"
-        )
-        XCTAssertLessThanOrEqual(
-            midRange.minimumRAMGB, highEnd.minimumRAMGB,
-            "Mid-range default should not require more RAM than high-end default"
-        )
+        XCTAssertEqual(lowEnd.minimumRAMGB, 1, "Low-end tier uses 0.6B INT4 requiring 1 GB RAM")
+        XCTAssertEqual(midRange.minimumRAMGB, 2, "Mid-range tier uses 0.6B INT8 requiring 2 GB RAM")
+        XCTAssertEqual(highEnd.minimumRAMGB, 4, "High-end tier uses 1.7B INT8 requiring 4 GB RAM")
+        XCTAssertLessThanOrEqual(lowEnd.minimumRAMGB, midRange.minimumRAMGB)
+        XCTAssertLessThanOrEqual(midRange.minimumRAMGB, highEnd.minimumRAMGB)
     }
 }

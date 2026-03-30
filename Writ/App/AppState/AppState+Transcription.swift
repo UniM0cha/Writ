@@ -90,26 +90,8 @@ extension AppState {
                 }
             )
 
-            // 발화자 구분 (iOS + 설정 활성화 시)
-            var finalOutput = output
-            #if os(iOS)
-            let diarizationEnabled = UserDefaults.standard.bool(forKey: "diarizationEnabled")
-            if diarizationEnabled {
-                let diarService = diarizationService
-                if !diarService.isLoaded {
-                    try? await diarService.loadModels()
-                }
-                if diarService.isLoaded {
-                    let diarResult = try? await diarService.diarize(audioURL: audioURL)
-                    if let diarResult {
-                        finalOutput = diarService.merge(transcription: output, diarization: diarResult)
-                    }
-                }
-            }
-            #endif
-
             if let recording = backgroundContext.model(for: recordingID) as? Recording {
-                let segments = finalOutput.segments.enumerated().map { index, seg in
+                let segments = output.segments.enumerated().map { index, seg in
                     WritSegment(
                         text: seg.text,
                         startTime: seg.startTime,
@@ -119,7 +101,7 @@ extension AppState {
                     )
                 }
 
-                recording.transcription?.text = finalOutput.text
+                recording.transcription?.text = output.text
                 recording.transcription?.modelUsed = modelManager.activeModel?.displayName ?? "unknown"
                 recording.transcription?.status = .completed
                 recording.transcription?.progress = 1
@@ -127,7 +109,7 @@ extension AppState {
                 try backgroundContext.save()
 
                 if autoCopy {
-                    ClipboardService.copy(finalOutput.text)
+                    ClipboardService.copy(output.text)
                 }
 
                 // Live Activity → 완료 상태
@@ -136,7 +118,7 @@ extension AppState {
                 #endif
 
                 await sendCompletionNotification(
-                    text: finalOutput.text,
+                    text: output.text,
                     recordingID: recording.id
                 )
             }

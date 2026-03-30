@@ -54,6 +54,7 @@ final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
         // 2. 인스턴스 생성 (로드/다운로드 안 함)
         let config = WhisperKitConfig(
             modelFolder: modelURL.path,
+            computeOptions: ModelComputeOptions(melCompute: .cpuAndNeuralEngine),
             prewarm: false,
             load: false,
             download: false

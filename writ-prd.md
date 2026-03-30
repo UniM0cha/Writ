@@ -145,7 +145,7 @@ Writ은 이 문제들을 해결한다:
 
 ### 전사 결과물
 - **타임스탬프:** WhisperKit의 word-level 및 segment-level 타임스탬프 지원
-- **화자 분리:** v1에서는 미지원 (향후 오픈소스 기반 구현 검토)
+- **화자 분리:** pyannote + WeSpeaker 기반 발화자 구분 지원 (iOS)
 - **지원 언어:** Whisper 지원 다국어, 사용자가 녹음 시 언어 선택
 
 ---
@@ -395,7 +395,7 @@ protocol TranscriptionEngine {
 - [ ] Mac 홈 서버 모드 (Bonjour + CloudKit): iPhone/iPad 녹음을 Mac에서 large-v3로 대신 전사
 - [ ] 외부 네트워크에서도 Mac 서버 접근 (CloudKit 경유)
 - [ ] 잠자기 방지 옵션 (서버 모드 전용)
-- [ ] 화자 분리 (오픈소스 pyannote CoreML 변환)
+- [x] 화자 분리 (pyannote + WeSpeaker MLX 기반, iOS)
 - [ ] 실시간 스트리밍 전사
 - [ ] 전사 결과 검색
 - [ ] PDF 내보내기

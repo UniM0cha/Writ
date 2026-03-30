@@ -27,6 +27,11 @@ final class LiveActivityManager: ObservableObject {
     private var recordingStartDate: Date?
     private var lastProgressUpdate: Date = .distantPast
 
+    /// OOM 크래시 시 시스템이 자동으로 DI를 제거하도록, 업데이트마다 staleDate를 갱신한다.
+    /// 앱이 정상 동작 중이면 갱신이 계속되므로 만료되지 않고, 크래시 시에만 만료된다.
+    private static let recordingStaleInterval: TimeInterval = 300  // 녹음: 5분
+    private static let transcribingStaleInterval: TimeInterval = 30  // 전사: 30초
+
     // MARK: - State Transitions
 
     /// 녹음 시작 → DI 표시
@@ -39,7 +44,10 @@ final class LiveActivityManager: ObservableObject {
         phase = .recording
         recordingStartDate = startDate
 
-        requestActivity(state: .recording(duration: 0, startDate: startDate, power: 0))
+        requestActivity(
+            state: .recording(duration: 0, startDate: startDate, power: 0),
+            staleDate: Date.now.addingTimeInterval(Self.recordingStaleInterval)
+        )
     }
 
     /// 녹음 → 전사 전환
@@ -55,7 +63,7 @@ final class LiveActivityManager: ObservableObject {
         guard let activity = currentActivity else { return }
         let state = WritActivityAttributes.ContentState.transcribing()
         Task {
-            await activity.update(.init(state: state, staleDate: nil))
+            await activity.update(.init(state: state, staleDate: Date.now.addingTimeInterval(Self.transcribingStaleInterval)))
         }
     }
 
@@ -67,7 +75,7 @@ final class LiveActivityManager: ObservableObject {
         lastProgressUpdate = now
         let state = WritActivityAttributes.ContentState.transcribing(progress: progress)
         Task {
-            await activity.update(.init(state: state, staleDate: nil))
+            await activity.update(.init(state: state, staleDate: Date.now.addingTimeInterval(Self.transcribingStaleInterval)))
         }
     }
 
@@ -109,7 +117,10 @@ final class LiveActivityManager: ObservableObject {
         phase = .transcribing
         lastProgressUpdate = .distantPast
 
-        requestActivity(state: .transcribing())
+        requestActivity(
+            state: .transcribing(),
+            staleDate: Date.now.addingTimeInterval(Self.transcribingStaleInterval)
+        )
     }
 
     /// 즉시 종료 (취소/에러). 어떤 phase에서든 호출 가능.
@@ -132,12 +143,12 @@ final class LiveActivityManager: ObservableObject {
     // MARK: - Private Helpers
 
     /// Activity.request 공통 패턴
-    private func requestActivity(state: WritActivityAttributes.ContentState) {
+    private func requestActivity(state: WritActivityAttributes.ContentState, staleDate: Date? = nil) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         do {
             let activity = try Activity.request(
                 attributes: WritActivityAttributes(),
-                content: .init(state: state, staleDate: nil)
+                content: .init(state: state, staleDate: staleDate)
             )
             currentActivity = activity
             logger.debug("Activity started: \(activity.id)")

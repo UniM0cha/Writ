@@ -3,7 +3,6 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @AppStorage("autoCopyEnabled") private var autoCopyEnabled = false
-    @AppStorage("diarizationEnabled") private var diarizationEnabled = false
     @AppStorage("iCloudSyncEnabled") private var iCloudSyncEnabled = true
     @AppStorage("selectedLanguage") private var selectedLanguage = "auto"
     @AppStorage("autoDeleteDays") private var autoDeleteDays = 0
@@ -88,15 +87,8 @@ struct SettingsView: View {
     private var convenienceSection: some View {
         Section {
             Toggle("전사 완료 시 자동 복사", isOn: $autoCopyEnabled)
-            #if os(iOS)
-            Toggle("발화자 구분", isOn: $diarizationEnabled)
-            #endif
         } header: {
             Text("편의 기능")
-        } footer: {
-            #if os(iOS)
-            Text("발화자 구분을 켜면 전사 시 화자를 자동으로 구분합니다. 처리 시간이 늘어날 수 있습니다.")
-            #endif
         }
     }
 

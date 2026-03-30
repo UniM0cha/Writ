@@ -61,9 +61,9 @@ enum DeviceCapability: Sendable {
             defaultModel.modelIdentifier
         case .qwen3ASR:
             switch self {
-            case .highEnd: .qwen3_1_7B_8bit
-            case .midRange: .qwen3_0_6B_8bit
-            case .lowEnd: .qwen3_0_6B_4bit
+            case .highEnd: .qwen3_1_7B_int8
+            case .midRange: .qwen3_0_6B_int8
+            case .lowEnd: .qwen3_0_6B_int4
             }
         }
     }

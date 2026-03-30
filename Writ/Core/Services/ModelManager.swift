@@ -1,6 +1,6 @@
 import Foundation
 import os
-#if os(iOS)
+#if os(iOS) || os(macOS)
 import AudioCommon
 #endif
 
@@ -14,7 +14,7 @@ final class ModelManager: ObservableObject {
     @Published var selectedEngine: EngineType = .whisperKit
 
     let whisperEngine: WhisperKitEngine
-    #if os(iOS)
+    #if os(iOS) || os(macOS)
     private var qwenEngine: Qwen3ASREngine?
     #endif
     private let capability = DeviceCapability.current
@@ -49,7 +49,7 @@ final class ModelManager: ObservableObject {
                 unsupportedReason: capability.supports(id) ? nil : "이 기기에서는 메모리가 부족합니다"
             )
         }
-        #if os(iOS)
+        #if os(iOS) || os(macOS)
         let qwenModels = ModelIdentifier.allModels(for: .qwen3ASR).map { id in
             let supported = capability.supports(id)
             return ModelInfo(
@@ -72,7 +72,7 @@ final class ModelManager: ObservableObject {
         case .whisperKit:
             return whisperEngine
         case .qwen3ASR:
-            #if os(iOS)
+            #if os(iOS) || os(macOS)
             if qwenEngine == nil { qwenEngine = Qwen3ASREngine() }
             return qwenEngine!
             #else
@@ -96,7 +96,7 @@ final class ModelManager: ObservableObject {
     }
 
     /// Qwen3-ASR 모델이 로컬에 캐시되었는지 확인 (safetensors 존재 여부)
-    #if os(iOS)
+    #if os(iOS) || os(macOS)
     private static func isQwenModelDownloaded(_ identifier: ModelIdentifier) -> Bool {
         guard let cacheDir = try? HuggingFaceDownloader.getCacheDirectory(for: identifier.variantKey) else {
             return false
@@ -110,7 +110,7 @@ final class ModelManager: ObservableObject {
         if let variant = identifier.whisperVariant {
             return isWhisperModelDownloaded(variant)
         }
-        #if os(iOS)
+        #if os(iOS) || os(macOS)
         return isQwenModelDownloaded(identifier)
         #else
         return false
@@ -237,7 +237,7 @@ final class ModelManager: ObservableObject {
                     }
                 )
             } else if identifier.engine == .qwen3ASR {
-                #if os(iOS)
+                #if os(iOS) || os(macOS)
                 // Qwen3ASREngine에는 statusCallback이 있으므로 직접 호출
                 let qwen = engine(for: identifier) as! Qwen3ASREngine
                 try await qwen.loadModel(

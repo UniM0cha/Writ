@@ -19,9 +19,6 @@ final class AppState: ObservableObject {
     let modelManager: ModelManager
     let recorderService: AudioRecorderService
     let modelContainer: ModelContainer
-    #if os(iOS)
-    let diarizationService = DiarizationService()
-    #endif
     #if os(macOS)
     let fnKeyMonitor = FnKeyMonitor()
     #endif

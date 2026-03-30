@@ -151,4 +151,138 @@ final class TXTExporterTests: XCTestCase {
 
         XCTAssertEqual(result, "hello")
     }
+
+    // MARK: - Speaker Labels (with Timestamps)
+
+    func testExportWithTimestamps_singleSegmentWithSpeaker_includesSpeakerLabel() {
+        let segments = [
+            SegmentOutput(text: "안녕하세요", startTime: 0.0, endTime: 2.0, speaker: "화자 1")
+        ]
+
+        let result = TXTExporter.export(segments: segments, includeTimestamps: true)
+
+        XCTAssertEqual(result, "[00:00] [화자 1] 안녕하세요")
+    }
+
+    func testExportWithTimestamps_segmentWithoutSpeaker_noSpeakerLabel() {
+        let segments = [
+            SegmentOutput(text: "Hello", startTime: 0.0, endTime: 1.0)
+        ]
+
+        let result = TXTExporter.export(segments: segments, includeTimestamps: true)
+
+        XCTAssertEqual(result, "[00:00] Hello")
+        // 발화자 정보가 없으면 대괄호가 타임스탬프 이후에 나오면 안 됨
+        XCTAssertFalse(result.contains("[00:00] ["))
+    }
+
+    func testExportWithTimestamps_mixedSpeakerSegments() {
+        let segments = [
+            SegmentOutput(text: "Hi", startTime: 0.0, endTime: 1.0, speaker: "화자 1"),
+            SegmentOutput(text: "Hello", startTime: 1.0, endTime: 2.0),
+            SegmentOutput(text: "Bye", startTime: 2.0, endTime: 3.0, speaker: "화자 2"),
+        ]
+
+        let result = TXTExporter.export(segments: segments, includeTimestamps: true)
+
+        let expected = "[00:00] [화자 1] Hi\n[00:01] Hello\n[00:02] [화자 2] Bye"
+        XCTAssertEqual(result, expected)
+    }
+
+    func testExportWithTimestamps_multipleSpeakers_allWithSpeakers() {
+        let segments = [
+            SegmentOutput(text: "First", startTime: 0.0, endTime: 1.0, speaker: "화자 1"),
+            SegmentOutput(text: "Second", startTime: 1.0, endTime: 2.0, speaker: "화자 2"),
+            SegmentOutput(text: "Third", startTime: 2.0, endTime: 3.0, speaker: "화자 1"),
+        ]
+
+        let result = TXTExporter.export(segments: segments, includeTimestamps: true)
+
+        XCTAssertTrue(result.contains("[화자 1] First"))
+        XCTAssertTrue(result.contains("[화자 2] Second"))
+        XCTAssertTrue(result.contains("[화자 1] Third"))
+    }
+
+    func testExportWithTimestamps_speakerWithWhitespaceText_trimmingStillApplied() {
+        let segments = [
+            SegmentOutput(text: "  spaced  ", startTime: 0.0, endTime: 1.0, speaker: "화자 1")
+        ]
+
+        let result = TXTExporter.export(segments: segments, includeTimestamps: true)
+
+        XCTAssertEqual(result, "[00:00] [화자 1] spaced")
+        // 화자 라벨과 텍스트 사이에 여분의 공백이 없어야 함
+        XCTAssertFalse(result.contains("[화자 1]  spaced"))
+    }
+
+    func testExportWithTimestamps_speakerLabel_timestampFormatting() {
+        // 65초 = 1분 5초 지점에서 화자 라벨 포함
+        let segments = [
+            SegmentOutput(text: "Late segment", startTime: 65.0, endTime: 70.0, speaker: "화자 2")
+        ]
+
+        let result = TXTExporter.export(segments: segments, includeTimestamps: true)
+
+        XCTAssertEqual(result, "[01:05] [화자 2] Late segment")
+    }
+
+    func testExportWithTimestamps_nilSpeaker_explicitNil() {
+        let segments = [
+            SegmentOutput(text: "Test", startTime: 0.0, endTime: 1.0, speaker: nil)
+        ]
+
+        let result = TXTExporter.export(segments: segments, includeTimestamps: true)
+
+        XCTAssertEqual(result, "[00:00] Test")
+    }
+
+    // MARK: - Speaker Labels (without Timestamps)
+
+    func testExportWithoutTimestamps_speakerIsIgnored() {
+        // 타임스탬프 없이 내보내기 시 화자 정보는 포함되지 않음
+        let segments = [
+            SegmentOutput(text: "Hello", startTime: 0.0, endTime: 1.0, speaker: "화자 1"),
+            SegmentOutput(text: "World", startTime: 1.0, endTime: 2.0, speaker: "화자 2"),
+        ]
+
+        let result = TXTExporter.export(segments: segments)
+
+        XCTAssertEqual(result, "Hello World")
+        XCTAssertFalse(result.contains("화자"), "타임스탬프 없는 모드에서는 화자 라벨이 포함되면 안 됨")
+    }
+
+    // MARK: - Speaker Edge Cases
+
+    func testExportWithTimestamps_emptyStringSpeaker_stillShowsBrackets() {
+        // 빈 문자열 speaker는 기술적으로 nil이 아니므로 빈 대괄호가 나올 수 있음
+        let segments = [
+            SegmentOutput(text: "Text", startTime: 0.0, endTime: 1.0, speaker: "")
+        ]
+
+        let result = TXTExporter.export(segments: segments, includeTimestamps: true)
+
+        // 빈 speaker가 non-nil이면 [] 포맷이 적용됨
+        XCTAssertEqual(result, "[00:00] [] Text")
+    }
+
+    func testExportWithTimestamps_manySpeakers_correctLabeling() {
+        // 다수의 화자가 있는 대화
+        let segments = (1...5).map { i in
+            SegmentOutput(
+                text: "Segment \(i)",
+                startTime: TimeInterval(i - 1),
+                endTime: TimeInterval(i),
+                speaker: "화자 \(i)"
+            )
+        }
+
+        let result = TXTExporter.export(segments: segments, includeTimestamps: true)
+        let lines = result.components(separatedBy: "\n")
+
+        XCTAssertEqual(lines.count, 5)
+        for i in 1...5 {
+            XCTAssertTrue(lines[i - 1].contains("[화자 \(i)]"),
+                          "Line \(i)에 화자 \(i) 라벨이 있어야 함")
+        }
+    }
 }

@@ -71,8 +71,13 @@ struct WritLiveActivity: Widget {
                 Text("전사 중...")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(.white)
-                ProgressView(value: Double(context.state.transcriptionProgress))
-                    .tint(.blue)
+                if context.state.transcriptionProgress >= 0.01 {
+                    ProgressView(value: Double(context.state.transcriptionProgress))
+                        .tint(.blue)
+                } else {
+                    ProgressView()
+                        .tint(.blue)
+                }
             }
             .frame(maxHeight: .infinity, alignment: .center)
         case .completed:
@@ -97,11 +102,17 @@ struct WritLiveActivity: Widget {
             .buttonStyle(.plain)
             .frame(maxHeight: .infinity, alignment: .center)
         case .transcribing:
-            Text("\(Int(context.state.transcriptionProgress * 100))%")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.blue)
-                .monospacedDigit()
-                .frame(maxHeight: .infinity, alignment: .center)
+            if context.state.transcriptionProgress >= 0.01 {
+                Text("\(Int(context.state.transcriptionProgress * 100))%")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.blue)
+                    .monospacedDigit()
+                    .frame(maxHeight: .infinity, alignment: .center)
+            } else {
+                ProgressView()
+                    .tint(.blue)
+                    .frame(maxHeight: .infinity, alignment: .center)
+            }
         case .completed:
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 16))
@@ -155,10 +166,15 @@ struct WritLiveActivity: Widget {
             }
             .frame(width: 52)
         case .transcribing:
-            Text("\(Int(context.state.transcriptionProgress * 100))%")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.blue)
-                .monospacedDigit()
+            if context.state.transcriptionProgress >= 0.01 {
+                Text("\(Int(context.state.transcriptionProgress * 100))%")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.blue)
+                    .monospacedDigit()
+            } else {
+                ProgressView()
+                    .tint(.blue)
+            }
         case .completed:
             EmptyView()
         }

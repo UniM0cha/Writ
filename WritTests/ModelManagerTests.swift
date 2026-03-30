@@ -378,10 +378,55 @@ final class ModelManagerTests: XCTestCase {
     func test_deleteModel_clearsSharedDefaultsVariant() async {
         let defaults = AppGroupConstants.sharedDefaults
         let variantKey = "selectedModelVariant"
+        let tinyId = WhisperModelVariant.tiny.modelIdentifier
+
         defaults.set("test_variant", forKey: variantKey)
-        await sut.deleteModel(WhisperModelVariant.tiny.modelIdentifier)
+        sut.activeModel = tinyId
+
+        await sut.deleteModel(tinyId)
+
         XCTAssertNil(defaults.string(forKey: variantKey),
                      "deleteModel 후 sharedDefaults의 selectedModelVariant가 제거되어야 한다")
+    }
+
+    // MARK: - Qwen3-ASR Platform Availability
+
+    func test_init_qwenModelsPopulatedOnCurrentPlatform() {
+        // iOS/macOS 모두에서 Qwen3-ASR 모델이 models 배열에 포함되어야 함
+        let qwenModels = sut.models.filter { $0.identifier.engine == .qwen3ASR }
+        #if os(iOS) || os(macOS)
+        XCTAssertGreaterThan(qwenModels.count, 0, "iOS/macOS에서 Qwen3-ASR 모델이 포함되어야 함")
+        #endif
+    }
+
+    func test_currentEngineModels_qwen3ASR_matchesCatalog() {
+        sut.selectedEngine = .qwen3ASR
+        let currentModels = sut.currentEngineModels
+        let catalogModels = ModelIdentifier.allModels(for: .qwen3ASR)
+        XCTAssertEqual(currentModels.count, catalogModels.count,
+                      "currentEngineModels should match catalog count for qwen3ASR")
+        for catalogModel in catalogModels {
+            XCTAssertTrue(
+                currentModels.contains { $0.identifier == catalogModel },
+                "\(catalogModel.displayName) should be in currentEngineModels"
+            )
+        }
+    }
+
+    func test_init_qwenModelsHaveCorrectEngine() {
+        let qwenModels = sut.models.filter { $0.identifier.engine == .qwen3ASR }
+        for model in qwenModels {
+            XCTAssertEqual(model.identifier.engine, .qwen3ASR,
+                          "\(model.identifier.displayName) engine should be qwen3ASR")
+        }
+    }
+
+    func test_init_allQwenCatalogModelsPresent() {
+        let catalogModels = ModelIdentifier.allModels(for: .qwen3ASR)
+        for catalogModel in catalogModels {
+            let found = sut.models.contains { $0.identifier == catalogModel }
+            XCTAssertTrue(found, "\(catalogModel.displayName) should be in models array")
+        }
     }
 
     // MARK: - ModelIdentifier Bridge Tests
@@ -395,7 +440,7 @@ final class ModelManagerTests: XCTestCase {
     }
 
     func test_qwenModelIdentifier_whisperVariant_isNil() {
-        let qwenId = ModelIdentifier.qwen3_1_7B_8bit
+        let qwenId = ModelIdentifier.qwen3_0_6B_int8
         XCTAssertNil(qwenId.whisperVariant)
     }
 

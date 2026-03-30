@@ -67,6 +67,8 @@ final class WritIntentErrorTests: XCTestCase {
             switch error {
             case .noModelSelected:
                 break // 올바르게 catch됨
+            case .noRecordingInProgress, .noTranscriptionAvailable:
+                XCTFail("잘못된 에러 케이스")
             }
         } catch {
             XCTFail("WritIntentError.noModelSelected가 WritIntentError로 catch되지 않음")

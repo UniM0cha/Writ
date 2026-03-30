@@ -484,9 +484,11 @@ final class FormattingHelpersTests: XCTestCase {
 
     func test_groupByDate_preservesItemsWithinGroup() {
         let calendar = Calendar.current
-        let now = Date()
-        let oneHourAgo = calendar.date(byAdding: .hour, value: -1, to: now)!
-        let twoHoursAgo = calendar.date(byAdding: .hour, value: -2, to: now)!
+        // Use noon today to avoid midnight boundary issues
+        let noon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: Date())!
+        let now = noon
+        let oneHourAgo = calendar.date(byAdding: .hour, value: -1, to: noon)!
+        let twoHoursAgo = calendar.date(byAdding: .hour, value: -2, to: noon)!
 
         struct Item {
             let date: Date

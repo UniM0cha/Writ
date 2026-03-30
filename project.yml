@@ -3,7 +3,7 @@ options:
   bundleIdPrefix: com.solstice
   deploymentTarget:
     iOS: "26.0"
-    macOS: "14.0"
+    macOS: "15.0"
     watchOS: "10.0"
   xcodeVersion: "26.3"
   defaultConfig: Debug
@@ -76,13 +76,10 @@ targets:
         product: TTSKit
       - package: Qwen3Speech
         product: Qwen3ASR
-        destinationFilters: [iOS]
-      - package: Qwen3Speech
-        product: SpeechVAD
-        destinationFilters: [iOS]
+        destinationFilters: [iOS, macOS]
       - package: Qwen3Speech
         product: AudioCommon
-        destinationFilters: [iOS]
+        destinationFilters: [iOS, macOS]
       - target: WritWidgetExtension
         embed: true
         codeSign: true

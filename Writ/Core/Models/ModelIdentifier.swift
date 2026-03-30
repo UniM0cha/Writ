@@ -78,35 +78,35 @@ extension ModelIdentifier {
 // MARK: - Qwen3-ASR 모델 카탈로그
 
 extension ModelIdentifier {
-    static let qwen3_0_6B_4bit = ModelIdentifier(
+    static let qwen3_0_6B_int4 = ModelIdentifier(
         engine: .qwen3ASR,
-        variantKey: "aufklarer/Qwen3-ASR-0.6B-MLX-4bit",
+        variantKey: "UniMocha/Qwen3-ASR-0.6B-CoreML-INT4",
         displayName: "0.6B 4-bit",
-        diskSizeMB: 675,
+        diskSizeMB: 808,
+        minimumRAMGB: 1
+    )
+
+    static let qwen3_0_6B_int8 = ModelIdentifier(
+        engine: .qwen3ASR,
+        variantKey: "UniMocha/Qwen3-ASR-0.6B-CoreML-INT8",
+        displayName: "0.6B 8-bit",
+        diskSizeMB: 898,
         minimumRAMGB: 2
     )
 
-    static let qwen3_0_6B_8bit = ModelIdentifier(
+    static let qwen3_1_7B_int4 = ModelIdentifier(
         engine: .qwen3ASR,
-        variantKey: "aufklarer/Qwen3-ASR-0.6B-MLX-8bit",
-        displayName: "0.6B 8-bit",
-        diskSizeMB: 1000,
-        minimumRAMGB: 3
-    )
-
-    static let qwen3_1_7B_4bit = ModelIdentifier(
-        engine: .qwen3ASR,
-        variantKey: "aufklarer/Qwen3-ASR-1.7B-MLX-4bit",
+        variantKey: "UniMocha/Qwen3-ASR-1.7B-CoreML-INT4",
         displayName: "1.7B 4-bit",
-        diskSizeMB: 1200,
-        minimumRAMGB: 3
+        diskSizeMB: 2048,
+        minimumRAMGB: 2
     )
 
-    static let qwen3_1_7B_8bit = ModelIdentifier(
+    static let qwen3_1_7B_int8 = ModelIdentifier(
         engine: .qwen3ASR,
-        variantKey: "aufklarer/Qwen3-ASR-1.7B-MLX-8bit",
+        variantKey: "UniMocha/Qwen3-ASR-1.7B-CoreML-INT8",
         displayName: "1.7B 8-bit",
-        diskSizeMB: 2349,
+        diskSizeMB: 2253,
         minimumRAMGB: 4
     )
 
@@ -116,7 +116,7 @@ extension ModelIdentifier {
         case .whisperKit:
             WhisperModelVariant.allCases.map(\.modelIdentifier)
         case .qwen3ASR:
-            [.qwen3_0_6B_4bit, .qwen3_0_6B_8bit, .qwen3_1_7B_4bit, .qwen3_1_7B_8bit]
+            [.qwen3_0_6B_int4, .qwen3_0_6B_int8, .qwen3_1_7B_int4, .qwen3_1_7B_int8]
         }
     }
 

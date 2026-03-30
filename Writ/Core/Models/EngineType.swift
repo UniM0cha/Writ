@@ -14,10 +14,10 @@ enum EngineType: String, CaseIterable, Sendable, Identifiable {
         }
     }
 
-    /// 현재 플랫폼에서 사용 가능한 엔진 목록 (macOS/watchOS에서는 Qwen3-ASR 제외)
+    /// 현재 플랫폼에서 사용 가능한 엔진 목록 (watchOS에서는 Qwen3-ASR 제외)
     static var availableCases: [EngineType] {
-        #if os(iOS)
-        allCases.map { $0 }
+        #if os(iOS) || os(macOS)
+        Array(allCases)
         #else
         [.whisperKit]
         #endif

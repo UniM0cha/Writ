@@ -502,4 +502,159 @@ final class CrashLoopPreventionTests: XCTestCase {
         XCTAssertTrue(loadCalled, "failures < 2이면 로드가 호출되어야 함")
         XCTAssertEqual(UserDefaults.standard.integer(forKey: failKey), 0)
     }
+
+    // MARK: - 카운터 리셋 조건: activeModel nil + 저장된 선택 있음 = 리셋하지 않음
+
+    func test_crashCounter_doesNotReset_whenActiveModelNil_andPersistedSelectionExists() async {
+        // 시나리오: 모델 로드 시도 → 실패 (activeModel nil) + variant가 아직 저장됨
+        // → 카운터가 0으로 리셋되지 않아야 함 (다음 실행에서 threshold 도달 가능)
+
+        // Given: 카운터 0에서 시작, 유효하지만 로드 불가능한 모델 저장
+        UserDefaults.standard.set(0, forKey: failKey)
+        UserDefaults.standard.set("whisperKit", forKey: engineKey)
+        // 실제로 존재하지 않는 variant를 저장 (ModelIdentifier.find가 실패하도록)
+        // → loadDefaultModelIfNeeded가 이 variant를 찾지 못하면 activeModel은 nil
+        // 하지만 variant 키 자체는 UserDefaults에 남아 있음
+        UserDefaults.standard.set("nonexistent_variant_key", forKey: variantKey)
+
+        // When: setup() 로직 시뮬레이션
+        let failures = UserDefaults.standard.integer(forKey: failKey)
+        UserDefaults.standard.set(failures + 1, forKey: failKey)
+        await sut.loadDefaultModelIfNeeded()
+
+        // 카운터 리셋 조건 확인
+        let hasPersistedSelection = UserDefaults.standard.string(forKey: variantKey) != nil
+        if sut.activeModel != nil || !hasPersistedSelection {
+            UserDefaults.standard.set(0, forKey: failKey)
+        }
+
+        // Then: activeModel은 nil이고, variant가 존재하므로 카운터는 리셋되지 않아야 함
+        XCTAssertNil(sut.activeModel,
+                     "존재하지 않는 variant로는 모델을 로드할 수 없어야 함")
+        XCTAssertNotNil(UserDefaults.standard.string(forKey: variantKey),
+                        "loadDefaultModelIfNeeded가 variant를 찾지 못하면 키는 그대로 남아 있어야 함")
+        XCTAssertEqual(
+            UserDefaults.standard.integer(forKey: failKey), 1,
+            "activeModel이 nil이고 저장된 선택이 존재하면 카운터가 리셋되지 않아야 함"
+        )
+    }
+
+    func test_crashCounter_resetsWhenNoPersistedSelection_evenIfActiveModelNil() async {
+        // 시나리오: 최초 실행 — 저장된 모델 없음, activeModel도 nil
+        // → hasPersistedSelection이 false이므로 카운터가 0으로 리셋됨
+
+        // Given
+        UserDefaults.standard.set(0, forKey: failKey)
+        UserDefaults.standard.removeObject(forKey: variantKey)
+        UserDefaults.standard.removeObject(forKey: engineKey)
+
+        // When: setup() 로직 시뮬레이션
+        let failures = UserDefaults.standard.integer(forKey: failKey)
+        UserDefaults.standard.set(failures + 1, forKey: failKey)
+        await sut.loadDefaultModelIfNeeded()
+
+        let hasPersistedSelection = UserDefaults.standard.string(forKey: variantKey) != nil
+        if sut.activeModel != nil || !hasPersistedSelection {
+            UserDefaults.standard.set(0, forKey: failKey)
+        }
+
+        // Then: 저장된 선택이 없으므로 카운터가 리셋됨
+        XCTAssertNil(sut.activeModel)
+        XCTAssertFalse(hasPersistedSelection)
+        XCTAssertEqual(
+            UserDefaults.standard.integer(forKey: failKey), 0,
+            "저장된 선택이 없으면 (최초 실행) 카운터가 0으로 리셋되어야 함"
+        )
+    }
+
+    func test_crashCounter_accumulatesAcrossConsecutiveFailedLaunches() {
+        // 시나리오: 첫 번째 실행 실패 → 카운터 1, 두 번째 실행에서 threshold 도달
+
+        // 첫 번째 실행: 카운터 0 → 1
+        UserDefaults.standard.set(0, forKey: failKey)
+        UserDefaults.standard.set("openai_whisper-small", forKey: variantKey)
+
+        let failures1 = UserDefaults.standard.integer(forKey: failKey)
+        XCTAssertTrue(failures1 < 2)
+        UserDefaults.standard.set(failures1 + 1, forKey: failKey)
+
+        // 첫 번째 실행에서 앱 크래시 (카운터 리셋 안 됨) → 카운터 1 유지
+        XCTAssertEqual(UserDefaults.standard.integer(forKey: failKey), 1)
+
+        // 두 번째 실행: 카운터 1 → 2
+        let failures2 = UserDefaults.standard.integer(forKey: failKey)
+        XCTAssertTrue(failures2 < 2)
+        UserDefaults.standard.set(failures2 + 1, forKey: failKey)
+
+        // 두 번째 실행에서도 앱 크래시 → 카운터 2 유지
+        XCTAssertEqual(UserDefaults.standard.integer(forKey: failKey), 2)
+
+        // 세 번째 실행: 카운터 >= 2 → 자동 로드 건너뛰기
+        let failures3 = UserDefaults.standard.integer(forKey: failKey)
+        XCTAssertTrue(failures3 >= 2, "세 번째 실행에서 threshold 도달")
+    }
+
+    // MARK: - clearPersistedSelection 호출 후 loadDefaultModelIfNeeded가 모든 경로를 건너뛰는지 확인
+
+    func test_clearPersistedSelection_preventsAllLoadPaths() async {
+        // Given: 새 포맷과 기존 포맷 모두에 값 설정 후 clear
+        UserDefaults.standard.set("whisperKit", forKey: engineKey)
+        UserDefaults.standard.set("openai_whisper-tiny", forKey: variantKey)
+        sut.clearPersistedSelection()
+
+        // When
+        await sut.loadDefaultModelIfNeeded()
+
+        // Then: 새 포맷 경로(engineType+variant)도, 기존 포맷 경로(variant만)도 매칭 안 됨
+        XCTAssertNil(sut.activeModel,
+                     "clear 후에는 어떤 경로로도 모델이 로드되면 안 됨")
+    }
+
+    // MARK: - deleteModel이 clearPersistedSelection을 호출하는지 간접 검증
+
+    func test_deleteModel_activeModel_clearsAllFiveKeys() async {
+        // Given: activeModel 설정 + 모든 persisted 키에 값 저장
+        let tinyId = WhisperModelVariant.tiny.modelIdentifier
+        sut.activeModel = tinyId
+        UserDefaults.standard.set(tinyId.variantKey, forKey: variantKey)
+        UserDefaults.standard.set(tinyId.engine.rawValue, forKey: engineKey)
+        AppGroupConstants.sharedDefaults.set(tinyId.variantKey, forKey: variantKey)
+        AppGroupConstants.sharedDefaults.set(tinyId.engine.rawValue, forKey: engineKey)
+        AppGroupConstants.sharedDefaults.set(tinyId.displayName, forKey: displayNameKey)
+
+        // When
+        await sut.deleteModel(tinyId)
+
+        // Then: clearPersistedSelection이 호출되어 5개 키 모두 제거됨
+        XCTAssertNil(sut.activeModel,
+                     "deleteModel 후 activeModel은 nil이어야 함")
+        XCTAssertNil(UserDefaults.standard.string(forKey: variantKey),
+                     "deleteModel 후 standard variant가 제거되어야 함")
+        XCTAssertNil(UserDefaults.standard.string(forKey: engineKey),
+                     "deleteModel 후 standard engineType이 제거되어야 함")
+        XCTAssertNil(AppGroupConstants.sharedDefaults.string(forKey: variantKey),
+                     "deleteModel 후 shared variant가 제거되어야 함")
+        XCTAssertNil(AppGroupConstants.sharedDefaults.string(forKey: engineKey),
+                     "deleteModel 후 shared engineType이 제거되어야 함")
+        XCTAssertNil(AppGroupConstants.sharedDefaults.string(forKey: displayNameKey),
+                     "deleteModel 후 shared displayName이 제거되어야 함")
+    }
+
+    func test_deleteModel_nonActiveModel_doesNotClearSelection() async {
+        // Given: activeModel은 tiny, 삭제 대상은 base
+        let tinyId = WhisperModelVariant.tiny.modelIdentifier
+        let baseId = WhisperModelVariant.base.modelIdentifier
+        sut.activeModel = tinyId
+        UserDefaults.standard.set(tinyId.variantKey, forKey: variantKey)
+        UserDefaults.standard.set(tinyId.engine.rawValue, forKey: engineKey)
+
+        // When: 활성 모델이 아닌 다른 모델 삭제
+        await sut.deleteModel(baseId)
+
+        // Then: activeModel과 selection은 유지됨
+        XCTAssertEqual(sut.activeModel, tinyId,
+                       "활성 모델이 아닌 모델 삭제 시 activeModel은 유지되어야 함")
+        XCTAssertNotNil(UserDefaults.standard.string(forKey: variantKey),
+                        "활성 모델이 아닌 모델 삭제 시 selection은 유지되어야 함")
+    }
 }

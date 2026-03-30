@@ -29,3 +29,9 @@ Package.resolved
 
 # Serena MCP
 .serena/
+
+# Python venv
+.venv/
+
+# CoreML 변환 결과물
+coreml-models/

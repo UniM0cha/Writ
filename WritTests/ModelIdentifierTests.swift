@@ -174,7 +174,7 @@ final class ModelIdentifierTests: XCTestCase {
     }
 
     func testCodableRoundtrip_qwen3ASR() throws {
-        let original = ModelIdentifier.qwen3_1_7B_8bit
+        let original = ModelIdentifier.qwen3_0_6B_int8
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(ModelIdentifier.self, from: data)
 
@@ -239,10 +239,7 @@ final class ModelIdentifierTests: XCTestCase {
     }
 
     func testWhisperVariant_qwenModel_returnsNil() {
-        XCTAssertNil(ModelIdentifier.qwen3_0_6B_4bit.whisperVariant)
-        XCTAssertNil(ModelIdentifier.qwen3_0_6B_8bit.whisperVariant)
-        XCTAssertNil(ModelIdentifier.qwen3_1_7B_4bit.whisperVariant)
-        XCTAssertNil(ModelIdentifier.qwen3_1_7B_8bit.whisperVariant)
+        XCTAssertNil(ModelIdentifier.qwen3_0_6B_int8.whisperVariant)
     }
 
     func testWhisperVariant_arbitraryWhisperKey_returnsNil() {
@@ -269,36 +266,12 @@ final class ModelIdentifierTests: XCTestCase {
         }
     }
 
-    func testQwen3Catalog_specificValues_0_6B_4bit() {
-        let model = ModelIdentifier.qwen3_0_6B_4bit
-        XCTAssertEqual(model.variantKey, "aufklarer/Qwen3-ASR-0.6B-MLX-4bit")
-        XCTAssertEqual(model.displayName, "0.6B 4-bit")
-        XCTAssertEqual(model.diskSizeMB, 675)
-        XCTAssertEqual(model.minimumRAMGB, 2)
-    }
-
-    func testQwen3Catalog_specificValues_0_6B_8bit() {
-        let model = ModelIdentifier.qwen3_0_6B_8bit
-        XCTAssertEqual(model.variantKey, "aufklarer/Qwen3-ASR-0.6B-MLX-8bit")
+    func testQwen3Catalog_specificValues_qwen3CoreML() {
+        let model = ModelIdentifier.qwen3_0_6B_int8
+        XCTAssertEqual(model.variantKey, "UniMocha/Qwen3-ASR-0.6B-CoreML-INT8")
         XCTAssertEqual(model.displayName, "0.6B 8-bit")
-        XCTAssertEqual(model.diskSizeMB, 1000)
-        XCTAssertEqual(model.minimumRAMGB, 3)
-    }
-
-    func testQwen3Catalog_specificValues_1_7B_4bit() {
-        let model = ModelIdentifier.qwen3_1_7B_4bit
-        XCTAssertEqual(model.variantKey, "aufklarer/Qwen3-ASR-1.7B-MLX-4bit")
-        XCTAssertEqual(model.displayName, "1.7B 4-bit")
-        XCTAssertEqual(model.diskSizeMB, 1200)
-        XCTAssertEqual(model.minimumRAMGB, 3)
-    }
-
-    func testQwen3Catalog_specificValues_1_7B_8bit() {
-        let model = ModelIdentifier.qwen3_1_7B_8bit
-        XCTAssertEqual(model.variantKey, "aufklarer/Qwen3-ASR-1.7B-MLX-8bit")
-        XCTAssertEqual(model.displayName, "1.7B 8-bit")
-        XCTAssertEqual(model.diskSizeMB, 2349)
-        XCTAssertEqual(model.minimumRAMGB, 4)
+        XCTAssertEqual(model.diskSizeMB, 898)
+        XCTAssertEqual(model.minimumRAMGB, 2)
     }
 
     func testQwen3Catalog_diskSizePositive() {
@@ -322,7 +295,7 @@ final class ModelIdentifierTests: XCTestCase {
     func testQwen3Catalog_variantKeysContainHuggingFacePrefix() {
         for model in ModelIdentifier.allModels(for: .qwen3ASR) {
             XCTAssertTrue(
-                model.variantKey.contains("aufklarer/"),
+                model.variantKey.contains("UniMocha/"),
                 "\(model.displayName) variantKey should contain HuggingFace org prefix"
             )
         }
@@ -351,6 +324,54 @@ final class ModelIdentifierTests: XCTestCase {
         XCTAssertEqual(ModelIdentifier.allModels(for: .qwen3ASR).count, 4)
     }
 
+    func testAllModels_qwen3ASR_containsAllCoreMLVariants() {
+        let models = ModelIdentifier.allModels(for: .qwen3ASR)
+        XCTAssertEqual(models, [.qwen3_0_6B_int4, .qwen3_0_6B_int8, .qwen3_1_7B_int4, .qwen3_1_7B_int8])
+    }
+
+    // MARK: - Old MLX Variants Removed
+
+    func testFind_oldMLXVariants_returnNil() {
+        let oldMLXVariantKeys = [
+            "aufklarer/Qwen3-ASR-0.6B-MLX-4bit",
+            "aufklarer/Qwen3-ASR-0.6B-MLX-8bit",
+            "aufklarer/Qwen3-ASR-1.7B-MLX-4bit",
+            "aufklarer/Qwen3-ASR-1.7B-MLX-8bit",
+        ]
+        for key in oldMLXVariantKeys {
+            let found = ModelIdentifier.find(engine: .qwen3ASR, variantKey: key)
+            XCTAssertNil(found, "Old MLX variant '\(key)' should no longer exist in catalog")
+        }
+    }
+
+    // MARK: - CoreML Model Properties
+
+    func testQwen3CoreML_engineIsQwen3ASR() {
+        XCTAssertEqual(ModelIdentifier.qwen3_0_6B_int8.engine, .qwen3ASR)
+    }
+
+    func testQwen3CoreML_variantKeyContainsCoreML() {
+        XCTAssertTrue(
+            ModelIdentifier.qwen3_0_6B_int8.variantKey.contains("CoreML"),
+            "CoreML variant key should contain 'CoreML'"
+        )
+    }
+
+    func testQwen3CoreML_diskSizeIsReasonable() {
+        // CoreML model should be much smaller than old MLX variants
+        XCTAssertEqual(ModelIdentifier.qwen3_0_6B_int8.diskSizeMB, 898)
+        XCTAssertGreaterThan(ModelIdentifier.qwen3_0_6B_int8.diskSizeMB, 0)
+    }
+
+    func testQwen3CoreML_minimumRAMIsLow() {
+        // CoreML model should require only 2 GB RAM (lightweight)
+        XCTAssertEqual(ModelIdentifier.qwen3_0_6B_int8.minimumRAMGB, 2)
+    }
+
+    func testQwen3CoreML_idFormat() {
+        XCTAssertEqual(ModelIdentifier.qwen3_0_6B_int8.id, "qwen3ASR/UniMocha/Qwen3-ASR-0.6B-CoreML-INT8")
+    }
+
     // MARK: - find(engine:variantKey:)
 
     func testFind_existingWhisperModel() {
@@ -361,9 +382,9 @@ final class ModelIdentifierTests: XCTestCase {
     }
 
     func testFind_existingQwenModel() {
-        let found = ModelIdentifier.find(engine: .qwen3ASR, variantKey: "aufklarer/Qwen3-ASR-0.6B-MLX-4bit")
+        let found = ModelIdentifier.find(engine: .qwen3ASR, variantKey: "UniMocha/Qwen3-ASR-0.6B-CoreML-INT8")
         XCTAssertNotNil(found)
-        XCTAssertEqual(found, .qwen3_0_6B_4bit)
+        XCTAssertEqual(found, .qwen3_0_6B_int8)
     }
 
     func testFind_nonexistentVariantKey_returnsNil() {

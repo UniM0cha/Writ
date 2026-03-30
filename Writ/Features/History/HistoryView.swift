@@ -58,8 +58,16 @@ struct HistoryView: View {
             ForEach(groupedByDate, id: \.key) { date, items in
                 Section {
                     ForEach(items) { recording in
-                        NavigationLink(destination: TranscriptionDetailView(recording: recording)) {
-                            HistoryRowView(recording: recording)
+                        Button {
+                            navigateToRecording = recording
+                        } label: {
+                            HStack {
+                                HistoryRowView(recording: recording)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
                         }
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) {

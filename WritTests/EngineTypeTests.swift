@@ -102,4 +102,54 @@ final class EngineTypeTests: XCTestCase {
     func testEquatable_differentCases() {
         XCTAssertNotEqual(EngineType.whisperKit, EngineType.qwen3ASR)
     }
+
+    // MARK: - availableCases
+
+    func testAvailableCases_alwaysIncludesWhisperKit() {
+        XCTAssertTrue(EngineType.availableCases.contains(.whisperKit))
+    }
+
+    func testAvailableCases_includesQwen3ASR_onSupportedPlatforms() {
+        #if os(iOS) || os(macOS)
+        XCTAssertTrue(EngineType.availableCases.contains(.qwen3ASR),
+                     "iOS/macOS에서는 Qwen3-ASR이 available에 포함되어야 함")
+        #else
+        XCTAssertFalse(EngineType.availableCases.contains(.qwen3ASR),
+                      "watchOS 등에서는 Qwen3-ASR이 제외되어야 함")
+        #endif
+    }
+
+    func testIsAvailableOnCurrentPlatform_whisperKit() {
+        XCTAssertTrue(EngineType.whisperKit.isAvailableOnCurrentPlatform)
+    }
+
+    func testIsAvailableOnCurrentPlatform_qwen3ASR() {
+        #if os(iOS) || os(macOS)
+        XCTAssertTrue(EngineType.qwen3ASR.isAvailableOnCurrentPlatform)
+        #else
+        XCTAssertFalse(EngineType.qwen3ASR.isAvailableOnCurrentPlatform)
+        #endif
+    }
+
+    func testAvailableCases_countOnSupportedPlatforms() {
+        #if os(iOS) || os(macOS)
+        XCTAssertEqual(EngineType.availableCases.count, EngineType.allCases.count,
+                      "iOS/macOS에서는 모든 엔진이 available이어야 함")
+        #else
+        XCTAssertLessThan(EngineType.availableCases.count, EngineType.allCases.count,
+                         "watchOS 등에서는 일부 엔진이 제외되어야 함")
+        #endif
+    }
+
+    func testAvailableCases_noDuplicates() {
+        let cases = EngineType.availableCases
+        let uniqueCases = Set(cases)
+        XCTAssertEqual(cases.count, uniqueCases.count, "availableCases에 중복이 없어야 함")
+    }
+
+    func testAvailableCases_isSubsetOfAllCases() {
+        let available = Set(EngineType.availableCases)
+        let all = Set(EngineType.allCases)
+        XCTAssertTrue(available.isSubset(of: all), "availableCases는 allCases의 부분집합이어야 함")
+    }
 }

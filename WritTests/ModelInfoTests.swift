@@ -28,7 +28,7 @@ final class ModelInfoTests: XCTestCase {
     // MARK: - Init Custom Values
 
     func testInit_customValues() {
-        let identifier = ModelIdentifier.qwen3_1_7B_8bit
+        let identifier = ModelIdentifier.qwen3_0_6B_int8
         let info = ModelInfo(
             identifier: identifier,
             state: .downloaded,
@@ -67,9 +67,9 @@ final class ModelInfoTests: XCTestCase {
     }
 
     func testId_qwenModel() {
-        let identifier = ModelIdentifier.qwen3_0_6B_4bit
+        let identifier = ModelIdentifier.qwen3_0_6B_int8
         let info = ModelInfo(identifier: identifier)
-        XCTAssertEqual(info.id, "qwen3ASR/aufklarer/Qwen3-ASR-0.6B-MLX-4bit")
+        XCTAssertEqual(info.id, "qwen3ASR/UniMocha/Qwen3-ASR-0.6B-CoreML-INT8")
     }
 
     // MARK: - State Mutation
@@ -117,7 +117,7 @@ final class ModelInfoTests: XCTestCase {
     // MARK: - isSupported Mutation
 
     func testIsSupported_canBeUpdated() {
-        let identifier = ModelIdentifier.qwen3_1_7B_8bit
+        let identifier = ModelIdentifier.qwen3_0_6B_int8
         var info = ModelInfo(identifier: identifier)
 
         XCTAssertTrue(info.isSupported)
@@ -128,7 +128,7 @@ final class ModelInfoTests: XCTestCase {
     // MARK: - unsupportedReason Mutation
 
     func testUnsupportedReason_canBeSetAndCleared() {
-        let identifier = ModelIdentifier.qwen3_1_7B_8bit
+        let identifier = ModelIdentifier.qwen3_0_6B_int8
         var info = ModelInfo(identifier: identifier)
 
         XCTAssertNil(info.unsupportedReason)

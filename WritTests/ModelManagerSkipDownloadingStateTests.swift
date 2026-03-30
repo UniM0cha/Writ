@@ -106,9 +106,7 @@ final class ModelManagerSkipDownloadingStateTests: XCTestCase {
 
     func test_qwenIdentifier_engineIsQwen3ASR() {
         // isModelDownloaded에서 엔진 디스패치를 위해 engine 프로퍼티가 올바르게 설정되어야 함
-        let qwenIds: [ModelIdentifier] = [
-            .qwen3_0_6B_4bit, .qwen3_0_6B_8bit, .qwen3_1_7B_4bit, .qwen3_1_7B_8bit
-        ]
+        let qwenIds: [ModelIdentifier] = [.qwen3_0_6B_int4, .qwen3_0_6B_int8, .qwen3_1_7B_int4, .qwen3_1_7B_int8]
         for id in qwenIds {
             XCTAssertEqual(id.engine, .qwen3ASR, "\(id.displayName)의 engine이 .qwen3ASR이어야 함")
         }

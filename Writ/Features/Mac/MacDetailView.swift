@@ -367,7 +367,7 @@ struct MacDetailView: View {
     private func exportTXT() {
         guard let segments = recording.transcription?.segments else { return }
         let segmentOutputs = segments.sorted(by: { $0.orderIndex < $1.orderIndex }).map {
-            SegmentOutput(text: $0.text, startTime: $0.startTime, endTime: $0.endTime)
+            SegmentOutput(text: $0.text, startTime: $0.startTime, endTime: $0.endTime, speaker: $0.speaker)
         }
         let text = TXTExporter.export(segments: segmentOutputs, includeTimestamps: true)
         saveWithPanel(text, fileName: "transcription.txt")
@@ -376,7 +376,7 @@ struct MacDetailView: View {
     private func exportSRT() {
         guard let segments = recording.transcription?.segments else { return }
         let segmentOutputs = segments.sorted(by: { $0.orderIndex < $1.orderIndex }).map {
-            SegmentOutput(text: $0.text, startTime: $0.startTime, endTime: $0.endTime)
+            SegmentOutput(text: $0.text, startTime: $0.startTime, endTime: $0.endTime, speaker: $0.speaker)
         }
         let text = SRTExporter.export(segments: segmentOutputs)
         saveWithPanel(text, fileName: "transcription.srt")
